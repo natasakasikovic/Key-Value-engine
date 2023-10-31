@@ -1,10 +1,12 @@
 package bloomFilter
 
+
 type BloomFilter struct {
 	bitset   []byte
 	k, m     uint
 	hashFunc []HashWithSeed
 }
+
 func newBf(n int, p float64) BloomFilter { // n je ocekivan br elem, p vjerovatnoca
 	m := CalculateM(n, p)
 	k := CalculateK(n, m)
@@ -25,3 +27,13 @@ func CalculateK(expectedElements int, m uint) uint {
 	return uint(math.Ceil((float64(m) / float64(expectedElements)) * math.Log(2)))
 }
 
+func (b *BloomFilter) find(s string) bool {
+	for _, fn := range b.hashFunc {
+		var index uint = uint(fn.Hash([]byte(s)))
+		compressed := index % b.m
+		if b.bitset[compressed] == 0 {
+			return false
+		}
+	}
+	return true
+}
