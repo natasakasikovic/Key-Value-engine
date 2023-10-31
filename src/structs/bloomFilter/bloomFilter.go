@@ -1,6 +1,7 @@
 package bloomFilter
 
-import(
+import (
+	"encoding/binary"
 	"math"
 )
 
@@ -10,9 +11,9 @@ type BloomFilter struct {
 	hashFunc []HashWithSeed
 }
 
-func newBf(n int, p float64) BloomFilter { 
-	m := CalculateM(n, p)
-	k := CalculateK(n, m)
+func NewBf(n int, p float64) BloomFilter {
+	m := calculateM(n, p)
+	k := calculateK(n, m)
 
 	return BloomFilter{
 		bitset:   make([]byte, m),
@@ -22,15 +23,15 @@ func newBf(n int, p float64) BloomFilter {
 	}
 }
 
-func CalculateM(expectedElements int, falsePositiveRate float64) uint {
+func calculateM(expectedElements int, falsePositiveRate float64) uint {
 	return uint(math.Ceil(float64(expectedElements) * math.Abs(math.Log(falsePositiveRate)) / math.Pow(math.Log(2), float64(2))))
 }
 
-func CalculateK(expectedElements int, m uint) uint {
+func calculateK(expectedElements int, m uint) uint {
 	return uint(math.Ceil((float64(m) / float64(expectedElements)) * math.Log(2)))
 }
 
-func (b *BloomFilter) find(s string) bool {
+func (b *BloomFilter) Find(s string) bool {
 	for _, fn := range b.hashFunc {
 		var index uint = uint(fn.Hash([]byte(s)))
 		compressed := index % b.m
@@ -41,10 +42,26 @@ func (b *BloomFilter) find(s string) bool {
 	return true
 }
 
-func(b *Bloomfilter) insert(s string) {
+func (b *BloomFilter) Insert(s string) {
 	for _, fn := range b.hashFunc {
 		var index uint = uint(fn.Hash([]byte(s)))
 		compressed := index % b.m
 		b.bitset[compressed] = 1
 	}
+}
+
+func Serialize(b *BloomFilter) []byte {
+	var size int = 4 + 4 + int(b.k)*4 + int(b.m)
+	bytes := make([]byte, size)
+	binary.BigEndian.PutUint32(bytes[0:4], uint32(b.m)) //Bitset length
+	binary.BigEndian.PutUint32(bytes[4:8], uint32(b.k)) //Number of hash functions
+	i := 0
+	for _, fn := range b.hashFunc {
+		copy(bytes[8+8*i:16+8*i], fn.Seed) //Hash seeds
+		i++
+	}
+	for i := 0; i < int(b.m); i++ {
+		bytes = append(bytes, b.bitset[i]) //Bitset
+	}
+	return bytes
 }
