@@ -1,5 +1,8 @@
 package bloomFilter
 
+import(
+	"math"
+)
 
 type BloomFilter struct {
 	bitset   []byte
@@ -7,7 +10,7 @@ type BloomFilter struct {
 	hashFunc []HashWithSeed
 }
 
-func newBf(n int, p float64) BloomFilter { // n je ocekivan br elem, p vjerovatnoca
+func newBf(n int, p float64) BloomFilter { 
 	m := CalculateM(n, p)
 	k := CalculateK(n, m)
 
@@ -36,4 +39,12 @@ func (b *BloomFilter) find(s string) bool {
 		}
 	}
 	return true
+}
+
+func(b *Bloomfilter) insert(s string) {
+	for _, fn := range b.hashFunc {
+		var index uint = uint(fn.Hash([]byte(s)))
+		compressed := index % b.m
+		b.bitset[compressed] = 1
+	}
 }
