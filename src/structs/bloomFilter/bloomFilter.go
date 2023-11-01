@@ -65,3 +65,17 @@ func Serialize(b *BloomFilter) []byte {
 	}
 	return bytes
 }
+func Deserialize(bytes []byte) *BloomFilter {
+	b := &BloomFilter{}
+	m := uint(binary.BigEndian.Uint32(bytes[0:4]))
+	k := uint(binary.BigEndian.Uint32(bytes[4:8]))
+	hashFunc := make([]HashWithSeed, k)
+	for i := 0; i < int(k); i++ {
+		hashFunc[i] = HashWithSeed{Seed: bytes[8+i*8 : 16+8*i]}
+	}
+	b.m = m
+	b.k = k
+	b.hashFunc = hashFunc
+	b.bitset = bytes[8+k*8:]
+	return b
+}
