@@ -33,25 +33,6 @@ func calculateK(expectedElements int, m uint) uint {
 
 func (b *BloomFilter) Find(s string) bool {
 	for _, fn := range b.hashFunc {
-		var index uint = uint(fn.Hash([]byte(s)))
-		compressed := index % b.m
-		if b.bitset[compressed] == 0 {
-			return false
-		}
-	}
-	return true
-}
-
-func (b *BloomFilter) Insert(s string) {
-	for _, fn := range b.hashFunc {
-		var index uint = uint(fn.Hash([]byte(s)))
-		compressed := index % b.m
-		b.bitset[compressed] = 1
-	}
-}
-
-func (b *BloomFilter) FindBit(s string) bool {
-	for _, fn := range b.hashFunc {
 		var hash uint = uint(fn.Hash([]byte(s)))
 		compressed := hash % b.m
 		index := compressed / 8
@@ -63,7 +44,7 @@ func (b *BloomFilter) FindBit(s string) bool {
 	return true
 }
 
-func (b *BloomFilter) InsertBit(s string) {
+func (b *BloomFilter) Insert(s string) {
 	for _, fn := range b.hashFunc {
 		var hash uint = uint(fn.Hash([]byte(s)))
 		compressed := hash % b.m
@@ -87,13 +68,12 @@ func (b *BloomFilter) Serialize() []byte {
 		i++
 	}
 
-	copy(bytes[4+4+int(b.K)*4:], b.bitset) //bitset
+	copy(bytes[4+4+int(b.k)*4:], b.bitset) //bitset
 
 	return bytes
 }
 
 func Deserialize(bytes []byte) *BloomFilter {
-	b := &BloomFilter{}
 
 	m := uint(binary.BigEndian.Uint32(bytes[0:4]))
 	k := uint(binary.BigEndian.Uint32(bytes[4:8]))
@@ -102,15 +82,10 @@ func Deserialize(bytes []byte) *BloomFilter {
 	for i := 0; i < int(k); i++ {
 		hashFunc[i] = HashWithSeed{Seed: bytes[8+i*4 : 12+i*4]}
 	}
-
-	b.m = m
-	b.k = k
-	b.hashFunc = hashFunc
-	b.bitset = bytes[8+k*4:]
-
-	return b
-}
-
-func Test() {
-
+	return &BloomFilter{
+		m:        m,
+		k:        k,
+		hashFunc: hashFunc,
+		bitset:   bytes[8+k*4:],
+	}
 }
