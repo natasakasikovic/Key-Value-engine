@@ -20,7 +20,7 @@ func CreateHashFunctions(k uint) []HashWithSeed {
 	h := make([]HashWithSeed, k)
 	ts := uint(time.Now().Unix())
 	for i := uint(0); i < k; i++ {
-		seed := make([]byte, 32)
+		seed := make([]byte, 4)
 		binary.BigEndian.PutUint32(seed, uint32(ts+i))
 		hfn := HashWithSeed{Seed: seed}
 		h[i] = hfn

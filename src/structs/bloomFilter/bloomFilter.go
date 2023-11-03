@@ -16,7 +16,7 @@ func NewBf(n int, p float64) BloomFilter {
 	k := calculateK(n, m)
 
 	return BloomFilter{
-		bitset:   make([]byte, m),
+		bitset:   make([]byte, m/8+1),
 		k:        k,
 		m:        m,
 		hashFunc: CreateHashFunctions(k),
@@ -33,9 +33,11 @@ func calculateK(expectedElements int, m uint) uint {
 
 func (b *BloomFilter) Find(s string) bool {
 	for _, fn := range b.hashFunc {
-		var index uint = uint(fn.Hash([]byte(s)))
-		compressed := index % b.m
-		if b.bitset[compressed] == 0 {
+		var hash uint = uint(fn.Hash([]byte(s)))
+		compressed := hash % b.m
+		index := compressed / 8
+		mask := byte(1 << (7 - (compressed % 8)))
+		if b.bitset[index]&mask == 0 {
 			return false
 		}
 	}
@@ -44,15 +46,17 @@ func (b *BloomFilter) Find(s string) bool {
 
 func (b *BloomFilter) Insert(s string) {
 	for _, fn := range b.hashFunc {
-		var index uint = uint(fn.Hash([]byte(s)))
-		compressed := index % b.m
-		b.bitset[compressed] = 1
+		var hash uint = uint(fn.Hash([]byte(s)))
+		compressed := hash % b.m
+		index := compressed / 8
+		mask := byte(1 << (7 - (compressed % 8)))
+		b.bitset[index] = b.bitset[index] | mask
 	}
 }
 
 func (b *BloomFilter) Serialize() []byte {
 
-	var size int = 4 + 4 + int(b.k)*32 + int(b.m)
+	var size int = 4 + 4 + int(b.k)*4 + int(b.m)/8
 	bytes := make([]byte, size)
 
 	binary.BigEndian.PutUint32(bytes[0:4], uint32(b.m)) //Bitset length
@@ -60,36 +64,28 @@ func (b *BloomFilter) Serialize() []byte {
 
 	i := 0
 	for _, fn := range b.hashFunc {
-		copy(bytes[8+32*i:40+32*i], fn.Seed) //Hash seeds
+		copy(bytes[8+4*i:12+4*i], fn.Seed) //Hash seeds
 		i++
 	}
 
-	copy(bytes[size-int(b.m):], b.bitset) //bitset
+	copy(bytes[4+4+int(b.k)*4:], b.bitset) //bitset
 
 	return bytes
 }
 
 func Deserialize(bytes []byte) *BloomFilter {
-	b := &BloomFilter{}
 
 	m := uint(binary.BigEndian.Uint32(bytes[0:4]))
 	k := uint(binary.BigEndian.Uint32(bytes[4:8]))
 
 	hashFunc := make([]HashWithSeed, k)
 	for i := 0; i < int(k); i++ {
-		hashFunc[i] = HashWithSeed{Seed: bytes[8+i*32 : 40+i*32]}
+		hashFunc[i] = HashWithSeed{Seed: bytes[8+i*4 : 12+i*4]}
 	}
-
-	i := 0
-	for _, fn := range b.hashFunc {
-		copy(bytes[8+32*i:40+32*i], fn.Seed) //Hash seeds
-		i++
+	return &BloomFilter{
+		m:        m,
+		k:        k,
+		hashFunc: hashFunc,
+		bitset:   bytes[8+k*4:],
 	}
-
-	b.m = m
-	b.k = k
-	b.hashFunc = hashFunc
-	b.bitset = bytes[8+k*32:]
-
-	return b
 }
