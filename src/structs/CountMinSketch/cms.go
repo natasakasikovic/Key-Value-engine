@@ -13,7 +13,9 @@ type CMS struct {
 }
 
 // Allocates memory for the value table and hash list, and returns an empty CMS object
-func CreateCMS(k uint32, m uint32) *CMS {
+func CreateCMS(epsilon float64, delta float64) *CMS {
+	m := CalculateM(epsilon)
+	k := CalculateK(delta)
 	table := make([][]uint32, k)
 	for i := range table {
 		table[i] = make([]uint32, m)
@@ -133,4 +135,12 @@ func Deserialize(data []byte) *CMS {
 	cms.table = table
 
 	return cms
+}
+
+func CalculateM(epsilon float64) uint32 {
+	return uint32(math.Ceil(math.E / epsilon))
+}
+
+func CalculateK(delta float64) uint32 {
+	return uint32(math.Ceil(math.Log(math.E / delta)))
 }
