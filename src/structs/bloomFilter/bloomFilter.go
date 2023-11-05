@@ -56,7 +56,7 @@ func (b *BloomFilter) Insert(s string) {
 
 func (b *BloomFilter) Serialize() []byte {
 
-	var size int = 4 + 4 + int(b.k)*4 + int(b.m)/8
+	var size int = 4 + 4 + int(b.k)*4 + int(b.m)/8 + 1
 	bytes := make([]byte, size)
 
 	binary.BigEndian.PutUint32(bytes[0:4], uint32(b.m)) //Bitset length
