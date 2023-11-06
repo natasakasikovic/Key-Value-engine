@@ -1,6 +1,7 @@
 package countminsketch
 
 import (
+	"github.com/natasakasikovic/Key-Value-engine/src/structs/hash"
 	"encoding/binary"
 	"math"
 )
@@ -9,7 +10,7 @@ type CMS struct {
 	table  [][]uint32     // Table of occurrences
 	k      uint32         // Number of hash functions / number of rows
 	m      uint32         // Number of columns
-	hashes []HashWithSeed // Array of used hash functions
+	hashes []hash.HashWithSeed // Array of used hash functions
 }
 
 // Allocates memory for the value table and hash list, and returns an empty CMS object
@@ -21,7 +22,7 @@ func CreateCMS(epsilon float64, delta float64) *CMS {
 		table[i] = make([]uint32, m)
 	}
 
-	hashes := CreateHashFunctions(uint(k))
+	hashes := hash.CreateHashFunctions(uint(k))
 
 	cms := &CMS{table: table, k: k, m: m, hashes: hashes}
 
@@ -96,7 +97,7 @@ func Deserialize(data []byte) *CMS {
 	K := binary.BigEndian.Uint32(data[0:4])
 	M := binary.BigEndian.Uint32(data[4:8])
 
-	hash_list := make([]HashWithSeed, K)
+	hash_list := make([]hash.HashWithSeed, K)
 
 	hashes_slice := data[8:]
 	// i is the number in order of the hash we are currently deserializing
@@ -107,7 +108,7 @@ func Deserialize(data []byte) *CMS {
 		seed := make([]byte, 4) // Value of seed as an array of 4 bytes
 
 		binary.BigEndian.PutUint32(seed, seed_value) //Copy of seed value into the seed array
-		hash_list[i] = HashWithSeed{Seed: seed}
+		hash_list[i] = hash.HashWithSeed{Seed: seed}
 	}
 
 	hashes_slice_end := 8 + K*4

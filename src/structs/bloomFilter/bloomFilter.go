@@ -1,6 +1,7 @@
 package bloomFilter
 
 import (
+	"github.com/natasakasikovic/Key-Value-engine/src/structs/hash"
 	"encoding/binary"
 	"math"
 )
@@ -8,7 +9,7 @@ import (
 type BloomFilter struct {
 	bitset   []byte
 	k, m     uint
-	hashFunc []HashWithSeed
+	hashFunc []hash.HashWithSeed
 }
 
 func NewBf(n int, p float64) BloomFilter {
@@ -19,7 +20,7 @@ func NewBf(n int, p float64) BloomFilter {
 		bitset:   make([]byte, m/8+1),
 		k:        k,
 		m:        m,
-		hashFunc: CreateHashFunctions(k),
+		hashFunc: hash.CreateHashFunctions(k),
 	}
 }
 
@@ -78,9 +79,9 @@ func Deserialize(bytes []byte) *BloomFilter {
 	m := uint(binary.BigEndian.Uint32(bytes[0:4]))
 	k := uint(binary.BigEndian.Uint32(bytes[4:8]))
 
-	hashFunc := make([]HashWithSeed, k)
+	hashFunc := make([]hash.HashWithSeed, k)
 	for i := 0; i < int(k); i++ {
-		hashFunc[i] = HashWithSeed{Seed: bytes[8+i*4 : 12+i*4]}
+		hashFunc[i] = hash.HashWithSeed{Seed: bytes[8+i*4 : 12+i*4]}
 	}
 	return &BloomFilter{
 		m:        m,
