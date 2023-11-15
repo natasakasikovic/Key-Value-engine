@@ -12,22 +12,18 @@ type BTree struct {
 }
 
 type btree_node struct {
-	key_count  int             //Number of keys in node
-	key_list   []string        //List of keys splitting the node and containing values
-	value_list []MemtableValue //Values for keys from the key_list
-	is_leaf    bool            //Tells if this node is a leaf (contains only keys and values)
-	subtrees   []*btree_node   //Child nodes
-	parent     *btree_node     //The parent node
+	key_value_list kv_vector
+	is_leaf        bool          //Tells if this node is a leaf (contains only keys and values)
+	subtrees       []*btree_node //Child nodes
+	parent         *btree_node   //The parent node
 }
 
 //Initializes an empty BTree of the passed order
 func NewBTree(order int) BTree {
-	var head *btree_node = &btree_node{key_count: 0,
-		key_list:   make([]string, order),
-		value_list: make([]MemtableValue, order),
-		is_leaf:    true,
-		subtrees:   make([]*btree_node, order+1),
-		parent:     nil,
+	var head *btree_node = &btree_node{key_value_list: kv_vector{},
+		is_leaf:  true,
+		subtrees: make([]*btree_node, order+2),
+		parent:   nil,
 	}
 
 	return BTree{root: head, order: order, height: 0}
@@ -46,11 +42,11 @@ func (btree *BTree) searchNodeForKey(key string) (*btree_node, int) {
 	//Iterate through the tree
 	for {
 		current_node = next_node
-		var key_count int = current_node.key_count
+		var key_count int = current_node.key_value_list.Size()
 
 		//Check if the key is in the node
-		for i := 0; i < current_node.key_count; i++ {
-			if current_node.key_list[i] == key {
+		for i := 0; i < key_count; i++ {
+			if current_node.key_value_list.GetKeyAt(i) == key {
 				return current_node, i
 			}
 		}
@@ -63,7 +59,7 @@ func (btree *BTree) searchNodeForKey(key string) (*btree_node, int) {
 		//If the key isn't found in an internal node, traverse the appropriate child node
 		next_node = current_node.subtrees[key_count] //Assume the key belongs in the last child node
 		for i := 0; i < key_count; i++ {
-			if key < current_node.key_list[i] {
+			if key < current_node.key_value_list.GetKeyAt(i) {
 				next_node = current_node.subtrees[i]
 			}
 		}
@@ -82,7 +78,7 @@ func (btree *BTree) SearchRef(key string) *MemtableValue {
 		return nil
 	}
 
-	return &node_p.value_list[index]
+	return node_p.key_value_list.GetValueReferenceAt(index)
 }
 
 //Search returns the value represented by the passed key, as well as a boolean indicating if the key exists.
@@ -96,40 +92,98 @@ func (btree *BTree) Search(key string) (MemtableValue, bool) {
 	}
 }
 
-func (btree *BTree) splitNode(node *btree_node, key string, value MemtableValue) {
-
+//Returns the median key and the value associated with it of a certain node.
+func (btree *BTree) mediansOfNode(node *btree_node) (string, MemtableValue) {
+	var median_index int = node.key_value_list.Size() / 2
+	return node.key_value_list.Get(median_index)
 }
 
-func (btree *BTree) insertIntoNode(node *btree_node, key string, value MemtableValue) {
-	if node.key_count == btree.order {
-		//If a node already contains the maximum number of keys, it has to be split
-		//The reason splitting is a different method is for better readability
-		btree.splitNode(node, key, value)
-	} else {
-		//If a node contains enough space for the key, certain elements might have to be
-		//shifted to the right for the key to fit, and the key list to remain sorted
+//Returns the left and right nodes created from splitting an existing node.
+func (btree *BTree) newNodesFromSplit(node *btree_node) (*btree_node, *btree_node) {
+	var left_node *btree_node = &btree_node{parent: node.parent,
+		key_value_list: kv_vector{},
+		is_leaf:        node.is_leaf,
+		subtrees:       make([]*btree_node, btree.order+2)}
+	var right_node *btree_node = &btree_node{parent: node.parent,
+		key_value_list: kv_vector{},
+		is_leaf:        node.is_leaf,
+		subtrees:       make([]*btree_node, btree.order+2)}
 
-		for index := 0; index < node.key_count; index++ {
-			if key < node.key_list[index] {
-				//The variable index represents the index of the first key from -
-				//the key list larger than the passed key.
-				//All keys and values starting from index
-				copy(node.key_list[index:], node.key_list[index+1:])
-				copy(node.value_list[index:], node.value_list[index+1:])
+	var median_index int = node.key_value_list.Size() / 2
 
-				node.key_list[index] = key
-				node.value_list[index] = value
-
-				node.key_count += 1
-				return
-			}
-		}
-
-		//If no elements had to be shifted, simply append the key and value
-		node.key_list[node.key_count] = key
-		node.value_list[node.key_count] = value
-		node.key_count += 1
+	for i := 0; i < median_index; i++ {
+		key, val := node.key_value_list.Get(i)
+		left_node.key_value_list.PushBack(key, val)
 	}
+
+	for i := median_index + 1; i < node.key_value_list.Size(); i++ {
+		key, val := node.key_value_list.Get(i)
+		right_node.key_value_list.PushBack(key, val)
+	}
+
+	//Assign subtrees to appropriate nodes
+	for i := 0; i <= median_index; i++ {
+		left_node.subtrees[i] = node.subtrees[i]
+	}
+
+	for i := median_index + 1; i <= btree.order+1; i++ {
+		right_node.subtrees[i-median_index-1] = node.subtrees[i]
+	}
+
+	return left_node, right_node
+}
+
+func (btree *BTree) newRootNode() *btree_node {
+	btree.root = &btree_node{key_value_list: kv_vector{},
+		is_leaf:  false,
+		subtrees: make([]*btree_node, btree.order+2),
+		parent:   nil,
+	}
+	return btree.root
+}
+
+func (btree *BTree) splitNode(node *btree_node) {
+	med_key, med_value := btree.mediansOfNode(node)
+	left_tree, right_tree := btree.newNodesFromSplit(node)
+
+	//If 'node' is the root node, we need to create a new root.
+	node.parent = btree.newRootNode()
+
+	var new_med_index int = btree.insertIntoNode(node.parent, med_key, med_value)
+	node.parent.subtrees[new_med_index] = left_tree
+	node.parent.subtrees[new_med_index+1] = right_tree
+
+	left_tree.parent = node.parent
+	right_tree.parent = node.parent
+
+	btree.checkNodeValidity(node.parent)
+}
+
+// To be called after inserting a key-value into a node.
+// Checks whether a node contains too much keys and needs to be split.
+func (btree *BTree) checkNodeValidity(node *btree_node) {
+	if node.key_value_list.Size() > btree.order {
+		btree.splitNode(node)
+	}
+}
+
+//Inserts a key-value pair into a node and returns the index it was inserted at.
+func (btree *BTree) insertIntoNode(node *btree_node, key string, value MemtableValue) int {
+	//If a node contains enough space for the key, certain elements might have to be
+	//shifted to the right for the key to fit, and the key list to remain sorted
+
+	for index := 0; index < node.key_value_list.Size(); index++ {
+		if key < node.key_value_list.GetKeyAt(index) {
+			//The variable index represents the index of the first key from the -
+			//key list larger than the passed key.
+			node.key_value_list.Insert(uint(index), key, value)
+			return index
+		}
+	}
+
+	//If no elements had to be shifted, simply append the key and value
+	node.key_value_list.PushBack(key, value)
+	return node.key_value_list.Size() - 1
 }
 
 func (btree *BTree) Insert(key string, value MemtableValue) {
@@ -137,9 +191,10 @@ func (btree *BTree) Insert(key string, value MemtableValue) {
 
 	//If the key already exists in the tree, just change it's represented value.
 	if key_index != -1 {
-		node.value_list[key_index] = value
+		btree.root.key_value_list.SetValueAt(key_index, value)
 	} else {
 		btree.insertIntoNode(node, key, value)
+		btree.checkNodeValidity(node)
 	}
 
 }
