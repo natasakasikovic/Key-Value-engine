@@ -147,7 +147,9 @@ func (btree *BTree) splitNode(node *btree_node) {
 	left_tree, right_tree := btree.newNodesFromSplit(node)
 
 	//If 'node' is the root node, we need to create a new root.
-	node.parent = btree.newRootNode()
+	if node.parent == nil {
+		node.parent = btree.newRootNode()
+	}
 
 	var new_med_index int = btree.insertIntoNode(node.parent, med_key, med_value)
 	node.parent.subtrees[new_med_index] = left_tree
