@@ -121,13 +121,17 @@ func (btree *BTree) newNodesFromSplit(node *btree_node) (*btree_node, *btree_nod
 		right_node.key_value_list.PushBack(key, val)
 	}
 
-	//Assign subtrees to appropriate nodes
-	for i := 0; i <= median_index; i++ {
-		left_node.subtrees[i] = node.subtrees[i]
-	}
+	//Assign subtrees to appropriate nodes if the split node is not a leaf
+	if !node.is_leaf {
+		for i := 0; i <= median_index; i++ {
+			left_node.subtrees[i] = node.subtrees[i]
+			left_node.subtrees[i].parent = left_node
+		}
 
-	for i := median_index + 1; i <= btree.order+1; i++ {
-		right_node.subtrees[i-median_index-1] = node.subtrees[i]
+		for i := median_index + 1; i <= btree.order+1; i++ {
+			right_node.subtrees[i-median_index-1] = node.subtrees[i]
+			right_node.subtrees[i-median_index-1].parent = right_node
+		}
 	}
 
 	return left_node, right_node
@@ -142,6 +146,7 @@ func (btree *BTree) newRootNode() *btree_node {
 	return btree.root
 }
 
+//Splits a node if it contains too many key-value pairs
 func (btree *BTree) splitNode(node *btree_node) {
 	med_key, med_value := btree.mediansOfNode(node)
 	left_tree, right_tree := btree.newNodesFromSplit(node)
@@ -152,18 +157,21 @@ func (btree *BTree) splitNode(node *btree_node) {
 	}
 
 	var new_med_index int = btree.insertIntoNode(node.parent, med_key, med_value)
+	//Shift the existing subtrees to the right by one
+	copy(node.parent.subtrees[new_med_index+2:], node.parent.subtrees[new_med_index+1:])
+
 	node.parent.subtrees[new_med_index] = left_tree
 	node.parent.subtrees[new_med_index+1] = right_tree
 
 	left_tree.parent = node.parent
 	right_tree.parent = node.parent
 
-	btree.checkNodeValidity(node.parent)
+	btree.checkNodeOverflow(node.parent)
 }
 
 // To be called after inserting a key-value into a node.
-// Checks whether a node contains too much keys and needs to be split.
-func (btree *BTree) checkNodeValidity(node *btree_node) {
+// Checks whether a node contains too many keys and needs to be split.
+func (btree *BTree) checkNodeOverflow(node *btree_node) {
 	if node.key_value_list.Size() > btree.order {
 		btree.splitNode(node)
 	}
@@ -196,11 +204,140 @@ func (btree *BTree) Insert(key string, value MemtableValue) {
 		btree.root.key_value_list.SetValueAt(key_index, value)
 	} else {
 		btree.insertIntoNode(node, key, value)
-		btree.checkNodeValidity(node)
+		btree.checkNodeOverflow(node)
 	}
 
 }
 
-func (btree *BTree) Delete(key string) {
+//Returns the nodes right sibling, as well as the index of the key seperating them
+func (node *btree_node) getRightSibling() (*btree_node, int) {
+	if node.parent == nil {
+		return nil, -1
+	}
+	var parent *btree_node = node.parent
+	for i := 0; i < parent.key_value_list.Size(); i++ {
+		if parent.subtrees[i] == node {
+			return parent.subtrees[i+1], i
+		}
+	}
 
+	return nil, -1
+}
+
+//Return the nodes left sibling, as well as the index of the key seperating them
+func (node *btree_node) getLeftSibling() (*btree_node, int) {
+	if node.parent == nil {
+		return nil, -1
+	}
+	var parent *btree_node = node.parent
+	for i := 1; i < parent.key_value_list.Size()+1; i++ {
+		if parent.subtrees[i] == node {
+			return parent.subtrees[i-1], i - 1
+		}
+	}
+	return nil, -1
+}
+
+func (btree *BTree) rotateLeft(node *btree_node, right_sibling *btree_node, separator_index int) {
+	//The deficient node steals the separator from his parent and is no longer deficient
+	parent := node.parent
+	node.key_value_list.PushBack(parent.key_value_list.Get(separator_index))
+	//The parent loses the separator and replaces it with the leftmost key-value pair of the right sibling
+	key, value := right_sibling.key_value_list.Get(0)
+	parent.key_value_list.Set(separator_index, key, value)
+	btree.deleteFromNode(right_sibling, 0)
+}
+
+func (btree *BTree) rotateRight(node *btree_node, left_sibling *btree_node, separator_index int) {
+	//The deficient node steals the separator from his parent ans is no longer deficient
+	parent := node.parent
+	p_key, p_val := parent.key_value_list.Get(separator_index)
+	node.key_value_list.Insert(0, p_key, p_val)
+	//The parent loses the separator and replaces it with the right-most key-value pair of the left sibling
+	key, value := left_sibling.key_value_list.Get(left_sibling.key_value_list.Size() - 1)
+	parent.key_value_list.Set(separator_index, key, value)
+	btree.deleteFromNode(left_sibling, left_sibling.key_value_list.Size()-1)
+}
+
+func (btree *BTree) rotateNode(node *btree_node) {
+	//If the right sibling has more than the minimum amount of key-values, we can rotate one from him
+	right_sibling, right_separator := node.getRightSibling()
+	if right_sibling != nil {
+		if right_sibling.key_value_list.Size() > btree.order/2 {
+			btree.rotateLeft(node, right_sibling, right_separator)
+			return
+		}
+	}
+	//If the left sibling has more than the minimum amount of key-values, we can rotate one from him
+	left_sibling, left_separator := node.getLeftSibling()
+	if left_sibling != nil {
+		if left_sibling.key_value_list.Size() > btree.order/2 {
+			btree.rotateRight(node, left_sibling, left_separator)
+			return
+		}
+	}
+
+	//If neither of them has more than the minimum amount of key-values, we can merge with one of the siblings
+	//Find out which node is the left-most one
+	var parent *btree_node = node.parent
+	var left_node, right_node *btree_node = node, right_sibling
+	var separator_index int = right_separator
+
+	if right_sibling == nil {
+		left_node, right_node = left_sibling, node
+		separator_index = left_separator
+	}
+
+	//Move the separator to the end of the left node
+	var num_of_subtrees int = left_node.key_value_list.Size() + 1
+	left_node.key_value_list.PushBack(parent.key_value_list.Get(separator_index))
+	//Copy all the keys from the right node to the end of the left node
+	for i := 0; i < right_node.key_value_list.Size(); i++ {
+		left_node.key_value_list.PushBack(right_node.key_value_list.Get(i))
+	}
+
+	//Copy all the subtrees
+	for i := 0; i < right_node.key_value_list.Size()+1; i++ {
+		left_node.subtrees[num_of_subtrees+i] = right_node.subtrees[i]
+		right_node.subtrees[i].parent = left_node
+		right_node.subtrees[i] = nil
+	}
+
+	//Shift all the parent separators and subtrees after the separator to the left
+	parent.key_value_list.Delete(uint(separator_index))
+	copy(parent.subtrees[separator_index+1:], parent.subtrees[separator_index+2:])
+}
+
+//Check if an underflow occured at the passed node.
+//That is, check whether or not an internal node has at least the minimum number of keys.
+//If it does not, the tree needs rebalancing, unless it is the root node.
+func (btree *BTree) checkNodeUnderflow(node *btree_node) {
+	if (node.key_value_list.Size() < btree.order/2) && (node != btree.root) {
+		btree.rotateNode(node)
+	}
+}
+
+func (btree *BTree) deleteFromNode(node *btree_node, index int) {
+	node.key_value_list.Delete(uint(index))
+
+	if node.is_leaf {
+		//If an element from a leaf was deleted, we need to check if an underflow occured
+		btree.checkNodeUnderflow(node)
+	} else {
+		//Otherwise, we need to replace the deleted key-pair by stealing a replacement from a subtree
+		//We will be stealing the left-most key-value pair from the right subtree
+		var right_subtree *btree_node = node.subtrees[index+1]
+		key, value := right_subtree.key_value_list.Get(0)
+		node.key_value_list.Insert(uint(index), key, value)
+		//Afterwards, we have to delete the key-value pair from the subtree
+		btree.deleteFromNode(right_subtree, 0)
+	}
+}
+
+func (btree *BTree) Delete(key string) {
+	node, key_index := btree.searchNodeForKey(key)
+
+	if key_index != -1 {
+		btree.deleteFromNode(node, key_index)
+	}
 }
