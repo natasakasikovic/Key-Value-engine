@@ -8,12 +8,11 @@ import (
 
 const (
 	maxHeight = 16 // applied in the original skip list, can be changed if necessary
-
 )
 
 type node struct {
 	key   string
-	val   int
+	val   int              // TODO change to a more complex structure
 	tower [maxHeight]*node // a collection of forwarded pointers linking the node to subsequent nodes on each corresponding level of the skip list
 }
 
@@ -52,12 +51,70 @@ func (skipList *SkipList) search(key string) (*node, [maxHeight]*node) {
 	return nil, journey
 }
 
-func (s *SkipList) Delete(key string) {
+// inserting a new node
+func (skipList *SkipList) Insert(key string, val int) {
+	found, journey := skipList.search(key)
 
+	// if the requested key already exists we can swap its current value for the newly supplied value
+	// TODO: maybe it should be thrown an exception!
+	if found != nil {
+		// update value for existing key
+		found.val = val
+		return
+	}
+
+	height := roll() //pseudo-random height (defines on how many levels to add new node)
+
+	newNode := &node{key: key, val: val} // creating new node
+
+	// go through the skip list to the level where we insert a new node
+	for level := 0; level < height; level++ {
+		prev := journey[level] // to determine the node neighbors and splice the node with them
+
+		if prev == nil {
+			// prev is nil if we are extending the height of the skip list,
+			// becaues that level did not exist while the journey was being recorded
+			prev = skipList.head
+		}
+		newNode.tower[level] = prev.tower[level]
+		prev.tower[level] = newNode
+	}
+
+	// make sure that the correct height is reflected after a potential expansion has occurred
+	if height > skipList.height {
+		skipList.height = height
+	}
 }
 
-func (s *SkipList) Insert(key string, val int) {
+// deleting a node; we can also throw an exception if key does not exist?
+func (skipList *SkipList) Delete(key string) bool { //returns true if the deletion was successful, false otherwise.
+	found, journey := skipList.search(key)
 
+	if found == nil {
+		return false // if a node with the requested key doesn't exist
+	}
+
+	for level := 0; level < skipList.height; level++ {
+		// we backtrack the journey array, looking for the nodes neighboring the node requested for delition
+		if journey[level].tower[level] != found {
+			break
+		}
+		// split the node request for delition from its neighbors and splice its former neighbors together
+		journey[level].tower[level] = found.tower[level]
+		found.tower[level] = nil
+	}
+	found = nil
+	skipList.shrink() // adjust the new height if necessary
+	return true
+}
+
+// make sure the correct height is reflected after possible reduction
+func (skipList *SkipList) shrink() {
+	for level := skipList.height - 1; level >= 0; level-- {
+		if skipList.head.tower[level] == nil {
+			skipList.height--
+		}
+	}
 }
 
 // finding the precise value residing at a requested key; returns -1 if key not found and error
@@ -71,8 +128,8 @@ func (skipList *SkipList) Find(key string) (int, error) {
 	return found.val, nil
 }
 
-func (s *SkipList) roll() int {
-	level := 0
+func roll() int {
+	level := 1
 	// possible ret values from rand are 0 and 1
 	// we stop shen we get a 0
 	for ; rand.Int31n(2) == 1; level++ {
