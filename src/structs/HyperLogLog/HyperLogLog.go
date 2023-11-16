@@ -1,6 +1,7 @@
 package HyperLogLog
 
 import (
+	"encoding/binary"
 	"hash/fnv"
 	"math"
 	"math/bits"
@@ -76,5 +77,33 @@ func (hll *HLL) Insert(str string) {
 
 	if (zero_bits + 1) > int(existing_value) {
 		hll.reg[bucket_index] = uint8(zero_bits) + 1
+	}
+}
+func (hll HLL) Serialize() []byte {
+	var size int = 4 + 8 + 4*len(hll.reg)
+
+	bytes := make([]byte, size)
+	binary.BigEndian.PutUint32(bytes[0:4], uint32(hll.p))
+	binary.BigEndian.PutUint64(bytes[4:12], hll.m)
+
+	for i := 0; i < int(hll.m); i++ {
+		binary.BigEndian.PutUint32(bytes[12+4*i:16+4*i], uint32(hll.reg[i]))
+	}
+	return bytes
+}
+
+func (hll HLL) Deserialize(bytes []byte) *HLL {
+
+	p := uint32(binary.BigEndian.Uint32(bytes[0:4]))
+	m := uint64(binary.BigEndian.Uint64(bytes[4:12]))
+
+	reg := make([]uint8, m)
+	for i := 0; i < int(m); i++ {
+		reg[i] = uint8(uint32(binary.BigEndian.Uint32(bytes[12+4*i : 16+4*i])))
+	}
+	return &HLL{
+		p:   uint8(p),
+		m:   m,
+		reg: reg,
 	}
 }
