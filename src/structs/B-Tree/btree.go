@@ -29,6 +29,14 @@ func NewBTree(order int) BTree {
 	return BTree{root: head, order: order, height: 0}
 }
 
+//Call when a node is no longer needed, so it can be removed from memory by the garbage collector.
+func (node *btree_node) freeMemory() {
+	node.parent = nil
+	for i := 0; i < node.key_value_list.Size()+1; i++ {
+		node.subtrees[i] = nil
+	}
+}
+
 //searchNodeWithKey returns the pointer to a tree node that COULD contain the passed key.
 //If the key is present in the Tree, the node containing it will be returned.
 //Otherwise, a leaf node in which the key could be inserted will be returned.
@@ -154,6 +162,7 @@ func (btree *BTree) splitNode(node *btree_node) {
 	//If 'node' is the root node, we need to create a new root.
 	if node.parent == nil {
 		node.parent = btree.newRootNode()
+		btree.height++
 	}
 
 	var new_med_index int = btree.insertIntoNode(node.parent, med_key, med_value)
@@ -166,7 +175,9 @@ func (btree *BTree) splitNode(node *btree_node) {
 	left_tree.parent = node.parent
 	right_tree.parent = node.parent
 
-	btree.checkNodeOverflow(node.parent)
+	node.freeMemory()
+
+	btree.checkNodeOverflow(left_tree.parent)
 }
 
 // To be called after inserting a key-value into a node.
@@ -206,7 +217,6 @@ func (btree *BTree) Insert(key string, value MemtableValue) {
 		btree.insertIntoNode(node, key, value)
 		btree.checkNodeOverflow(node)
 	}
-
 }
 
 //Returns the nodes right sibling, as well as the index of the key seperating them
@@ -297,40 +307,69 @@ func (btree *BTree) rotateNode(node *btree_node) {
 	}
 
 	//Copy all the subtrees
-	for i := 0; i < right_node.key_value_list.Size()+1; i++ {
-		left_node.subtrees[num_of_subtrees+i] = right_node.subtrees[i]
-		right_node.subtrees[i].parent = left_node
-		right_node.subtrees[i] = nil
+	if !node.is_leaf {
+		for i := 0; i < right_node.key_value_list.Size()+1; i++ {
+			left_node.subtrees[num_of_subtrees+i] = right_node.subtrees[i]
+			right_node.subtrees[i].parent = left_node
+			right_node.subtrees[i] = nil
+		}
 	}
 
 	//Shift all the parent separators and subtrees after the separator to the left
 	parent.key_value_list.Delete(uint(separator_index))
 	copy(parent.subtrees[separator_index+1:], parent.subtrees[separator_index+2:])
+
+	//Since the parent node lost a key-value pair, we need to check if it's deficient.
+	btree.checkNodeUnderflow(parent)
 }
 
 //Check if an underflow occured at the passed node.
 //That is, check whether or not an internal node has at least the minimum number of keys.
 //If it does not, the tree needs rebalancing, unless it is the root node.
 func (btree *BTree) checkNodeUnderflow(node *btree_node) {
+	//The root node is an exception as it can have less than the minimum number of keys.
+	//However if it has 0 keys, then it is empty and a new root is needed.
+	if (node == btree.root) && (node.key_value_list.Size() == 0) {
+		btree.height--
+
+		//If the root has a child, it will become the new root.
+		//Otherwise the root, and the whole tree will remain empty.
+		if node.subtrees[0] != nil {
+			btree.root = node.subtrees[0]
+			node.subtrees[0].parent = nil
+		}
+		return
+	}
+
+	//If a non-root node has less than the minimum amount of keys, rotate.
 	if (node.key_value_list.Size() < btree.order/2) && (node != btree.root) {
 		btree.rotateNode(node)
 	}
 }
 
 func (btree *BTree) deleteFromNode(node *btree_node, index int) {
-	node.key_value_list.Delete(uint(index))
-
 	if node.is_leaf {
 		//If an element from a leaf was deleted, we need to check if an underflow occured
+		node.key_value_list.Delete(uint(index))
 		btree.checkNodeUnderflow(node)
 	} else {
-		//Otherwise, we need to replace the deleted key-pair by stealing a replacement from a subtree
-		//We will be stealing the left-most key-value pair from the right subtree
-		var right_subtree *btree_node = node.subtrees[index+1]
-		key, value := right_subtree.key_value_list.Get(0)
-		node.key_value_list.Insert(uint(index), key, value)
-		//Afterwards, we have to delete the key-value pair from the subtree
-		btree.deleteFromNode(right_subtree, 0)
+		//If we're deleting an element from an internal node, we simply need to replace
+		//the key-value pair being deleted with the smallest key-value pair larger than it
+		//AKA the leftmost key-value pair of the left-most leaf of the right subtree.
+		//This is because every key-value pair contained in the right subtree is larger than
+		//the key-value pair being deleted.
+		//The search for the smallest key-value pair larger than the pair being
+		//deleted starts from the right subtree.
+		var successor_child *btree_node = node.subtrees[index+1]
+		//We need to iteratively get to the leftmost leaf.
+		for !successor_child.is_leaf {
+			successor_child = successor_child.subtrees[0]
+		}
+		//Replace the deleted key-value pair with the appropriate values.
+		key, value := successor_child.key_value_list.Get(0)
+		node.key_value_list.Set(index, key, value)
+		//Delete the key-value pair from the child.
+		btree.deleteFromNode(successor_child, 0)
 	}
 }
 

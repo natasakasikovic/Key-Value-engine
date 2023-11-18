@@ -57,6 +57,7 @@ func (vec *kv_vector) SetValueAt(index int, value MemtableValue) {
 }
 
 func (vec *kv_vector) Set(index int, key string, value MemtableValue) {
+	vec.data[index].key = key
 	vec.data[index].value = value
 }
 
