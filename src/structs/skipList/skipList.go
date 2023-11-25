@@ -6,13 +6,16 @@ import (
 	"strings"
 )
 
+// TODO: Change the type when a concrete type for memtable data is made
+type MemtableValue struct{}
+
 const (
-	maxHeight = 16 // applied in the original skip list, can be changed if necessary
+	maxHeight = 16 // applied in the original skip list
 )
 
 type node struct {
 	key   string
-	val   int              // TODO change to a more complex structure
+	val   MemtableValue
 	tower [maxHeight]*node // a collection of forwarded pointers linking the node to subsequent nodes on each corresponding level of the skip list
 }
 
@@ -52,7 +55,7 @@ func (skipList *SkipList) search(key string) (*node, [maxHeight]*node) {
 }
 
 // inserting a new node
-func (skipList *SkipList) Insert(key string, val int) {
+func (skipList *SkipList) Insert(key string, val MemtableValue) {
 	found, journey := skipList.search(key)
 
 	// if the requested key already exists we can swap its current value for the newly supplied value
@@ -118,11 +121,11 @@ func (skipList *SkipList) shrink() {
 }
 
 // finding the precise value residing at a requested key; returns -1 if key not found and error
-func (skipList *SkipList) Find(key string) (int, error) {
+func (skipList *SkipList) Find(key string) (MemtableValue, error) {
 	found, _ := skipList.search(key)
 
 	if found == nil {
-		return -1, errors.New("key not found")
+		return MemtableValue{}, errors.New("key not found")
 	}
 
 	return found.val, nil
