@@ -36,6 +36,7 @@ type Record struct {
 	valueSize uint64
 	key       string
 	value     string
+	toNext    uint32 // number of bytes that we
 }
 
 func NewRecord(tombstone byte, key string, value string) *Record {
@@ -47,7 +48,7 @@ func (r *Record) GetRecordLength() uint64 {
 func (r *Record) RecordToBytes() []byte {
 	size := r.GetRecordLength()
 	bytes := make([]byte, size)
-	binary.BigEndian.PutUint32(bytes[CRC_START:CRC_START+TIMESTAMP_SIZE], r.crc)
+	binary.BigEndian.PutUint32(bytes[CRC_START:CRC_START+CRC_SIZE], r.crc)
 	binary.BigEndian.PutUint64(bytes[TIMESTAMP_START:TIMESTAMP_START+TIMESTAMP_SIZE], r.timestamp)
 	bytes[TOMBSTONE_START] = r.tombstone
 	binary.BigEndian.PutUint64(bytes[KEY_SIZE_START:KEY_SIZE_START+KEY_SIZE_SIZE], r.keySize)
