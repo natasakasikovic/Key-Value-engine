@@ -6,6 +6,7 @@ import (
 	"strings"
 )
 
+// NOTE: skip list and b-tree must support the same methods (which have the same name)
 // TODO: Change the type when a concrete type for memtable data is made
 type MemtableValue struct{}
 
@@ -20,14 +21,16 @@ type node struct {
 }
 
 type SkipList struct {
-	head   *node // starting head node
-	height int   // total number of levels that all nodes are currently occupying
+	head       *node // starting head node
+	height     int   // total number of levels that all nodes are currently occupying
+	numOfElems int
 }
 
 func NewSkipList() *SkipList {
 	skipList := &SkipList{}
 	skipList.head = &node{}
 	skipList.height = 1
+	skipList.numOfElems = 1
 	return skipList
 }
 
@@ -59,10 +62,10 @@ func (skipList *SkipList) Insert(key string, val MemtableValue) {
 	found, journey := skipList.search(key)
 
 	// if the requested key already exists we can swap its current value for the newly supplied value
-	// TODO: maybe it should be thrown an exception!
 	if found != nil {
 		// update value for existing key
 		found.val = val
+		skipList.numOfElems -= 1
 		return
 	}
 
@@ -87,16 +90,19 @@ func (skipList *SkipList) Insert(key string, val MemtableValue) {
 	if height > skipList.height {
 		skipList.height = height
 	}
+	skipList.numOfElems += 1
 }
 
-// deleting a node; we can also throw an exception if key does not exist?
-func (skipList *SkipList) Delete(key string) bool { //returns true if the deletion was successful, false otherwise.
+// deleting a node;
+// TODO: implement logical delete instead of permanent
+func (skipList *SkipList) Delete(key string) { //returns true if the deletion was successful, false otherwise.
 	found, journey := skipList.search(key)
 
 	if found == nil {
-		return false // if a node with the requested key doesn't exist
+		return // if a node with the requested key doesn't exist
 	}
 
+	// TODO: set attribute Tombstone on true (1) instead of of binding the pointers (loop is unnecessary)
 	for level := 0; level < skipList.height; level++ {
 		// we backtrack the journey array, looking for the nodes neighboring the node requested for delition
 		if journey[level].tower[level] != found {
@@ -108,9 +114,9 @@ func (skipList *SkipList) Delete(key string) bool { //returns true if the deleti
 	}
 	found = nil
 	skipList.shrink() // adjust the new height if necessary
-	return true
 }
 
+// TODO: delete this method when you enable logical delete
 // make sure the correct height is reflected after possible reduction
 func (skipList *SkipList) shrink() {
 	for level := skipList.height - 1; level >= 0; level-- {
@@ -129,6 +135,11 @@ func (skipList *SkipList) Find(key string) (MemtableValue, error) {
 	}
 
 	return found.val, nil
+}
+
+// capacity is attribute in interface memtable
+func (skipList *SkipList) IsFull(capacity int) bool {
+	return skipList.numOfElems >= capacity
 }
 
 func roll() int {
