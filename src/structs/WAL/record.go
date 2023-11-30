@@ -4,8 +4,6 @@ import (
 	"encoding/binary"
 	"errors"
 	"hash/crc32"
-	"io/ioutil"
-	"os"
 	"time"
 )
 
@@ -62,29 +60,6 @@ func (r *Record) RecordToBytes() []byte {
 		valueSlice[i] = r.value[i]
 	}
 	return bytes
-}
-func GetRecordsFromFile(file *os.File) ([]*Record, error) {
-	content, err := ioutil.ReadAll(file)
-	if err != nil {
-		return nil, err
-	}
-	records, err := ReadAllRecords(content)
-	if err != nil {
-		return nil, err
-	}
-	return records, nil
-}
-func ReadAllRecords(data []byte) ([]*Record, error) {
-	var records []*Record
-	for offset := 0; offset < len(data); {
-		record, bytesRead, err := ReadSingleRecord(data[offset:])
-		if err != nil {
-			return nil, err
-		}
-		records = append(records, record)
-		offset += bytesRead
-	}
-	return records, nil
 }
 func ReadSingleRecord(data []byte) (*Record, int, error) {
 	r := &Record{}
