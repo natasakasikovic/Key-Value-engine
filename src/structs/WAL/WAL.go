@@ -3,7 +3,7 @@ package WAL
 import (
 	"encoding/binary"
 	"fmt"
-	"io/ioutil"
+	"io"
 	"log"
 	"os"
 	"strconv"
@@ -53,7 +53,7 @@ func NewWAL(maxBytesPerFile uint32) (*WAL, error) {
 		segmentNames:    list}, nil
 }
 
-func (wal *WAL) append(r *Record) error {
+func (wal *WAL) Append(r *Record) error {
 	data := r.RecordToBytes()
 	fileLength, err := getFileLength(wal.currentFile)
 	if err != nil {
@@ -95,6 +95,8 @@ func (wal *WAL) append(r *Record) error {
 			return err
 		}
 		path := fmt.Sprintf("log%c%s%04d.log", os.PathSeparator, FILE_NAME, br+1) // making next file
+		fileName := fmt.Sprintf("%s%04d.log", FILE_NAME, br+1)
+		wal.segmentNames = append(wal.segmentNames, fileName)
 		wal.currentFile, err = os.OpenFile(path, os.O_RDWR|os.O_CREATE, 0644)
 		if err != nil {
 			return err
@@ -110,17 +112,17 @@ func (wal *WAL) append(r *Record) error {
 func (wal *WAL) ReadRecords() error {
 	bytesToTransfer := make([]byte, 0)
 	for _, fileName := range wal.segmentNames {
-		file, err := os.OpenFile(fileName, os.O_RDONLY, 644)
+		file, err := os.OpenFile("log/"+fileName, os.O_RDONLY, 644)
 		if err != nil {
 			return err
 		}
-		content, err := ioutil.ReadAll(file)
+		content, err := io.ReadAll(file)
 		if err != nil {
 			return err
 		}
 		data := append(bytesToTransfer, content...)
 		for offset := 0; offset < len(data); {
-			bytesLeft := wal.maxBytesPerFile - uint32(offset)
+			bytesLeft := uint32(len(data)) - uint32(offset)
 			//Ako je ostalo manje od 29 bajtova, ne mozemo ni celu duzinu procitati, otvaraj novi
 			if bytesLeft < 29 {
 				bytesToTransfer = make([]byte, bytesLeft)
