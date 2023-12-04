@@ -3,7 +3,6 @@ package merkletree
 import (
 	"crypto/sha1"
 	"errors"
-	"fmt"
 )
 
 type MerkleTree struct {
@@ -44,7 +43,7 @@ func buildLeaves(content [][]byte) ([]*Node, error) {
 
 	for _, c := range content {
 		leaves = append(leaves, &Node{
-			data:   Hash(c),
+			data:   hash(c),
 			left:   nil,
 			right:  nil,
 			parent: nil,
@@ -69,10 +68,9 @@ func buildTree(nodes []*Node) *Node {
 	var nodeList []*Node
 	for i := 0; i < length; i += 2 {
 		firstNode := nodes[i]
-		fmt.Println(i)
 		secondNode := nodes[i+1]
 		newNode := Node{
-			data:   Hash(append(firstNode.data[:], secondNode.data[:]...)),
+			data:   hash(append(firstNode.data[:], secondNode.data[:]...)),
 			left:   firstNode,
 			right:  secondNode,
 			parent: nil,
@@ -88,14 +86,46 @@ func buildTree(nodes []*Node) *Node {
 	return nodeList[0]
 }
 
-func Hash(data []byte) [20]byte {
+// ValidateTree function that checks if something changed
+// returns empty list if nothing has changed, if something has changed returns indices of leaves that have changed
+func (merkle *MerkleTree) ValidateTree(data [][]byte) ([]int, error) {
+	otherMerkle, err := NewTree(data)
+	var idxNodes []int
+	if err != nil {
+		return idxNodes, errors.New("there is no sense to check if something changed in tree while content is empty")
+	}
+	if otherMerkle.Root.data == merkle.Root.data {
+		return idxNodes, nil
+	} else { // in case roots are not same, we are looking for leaves that have changed
+		for i := 0; i < len(merkle.leaves); i++ {
+			if merkle.leaves[i] != otherMerkle.leaves[i] {
+				idxNodes = append(idxNodes, i)
+			}
+		}
+		return idxNodes, nil
+	}
+}
+
+// Serialize TODO
+func (merkle *MerkleTree) Serialize() {
+}
+
+// Deserialize TODO
+func Deserialize(bytes []byte) {
+}
+
+// TODO helper that will be used for serialization
+func (merkle *MerkleTree) breadthFirst() {
+}
+
+func hash(data []byte) [20]byte {
 	return sha1.Sum(data)
 }
 
 func addEmptyNode(nodes []*Node) []*Node {
 	empty := []byte{}
 	nodes = append(nodes, &Node{
-		data:   Hash(empty),
+		data:   hash(empty),
 		left:   nil,
 		right:  nil,
 		parent: nil,
