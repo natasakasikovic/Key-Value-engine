@@ -31,7 +31,7 @@ func NewTree(content [][]byte) (*MerkleTree, error) {
 	}, nil
 }
 
-// helper function - builds leaves from bytes given
+// helper - builds leaves from bytes given
 // return value of function (leaves) is used for buildTree function to recursively make tree
 // also returns error if there is no content for tree building
 func buildLeaves(content [][]byte) ([]*Node, error) {
@@ -86,9 +86,9 @@ func buildTree(nodes []*Node) *Node {
 	return nodeList[0]
 }
 
-// ValidateTree function that checks if something changed
+// VerifyTree function that checks if something changed
 // returns empty list if nothing has changed, if something has changed returns indices of leaves that have changed
-func (merkle *MerkleTree) ValidateTree(data [][]byte) ([]int, error) {
+func (merkle *MerkleTree) VerifyTree(data [][]byte) ([]int, error) {
 	otherMerkle, err := NewTree(data)
 	var idxNodes []int
 	if err != nil {
@@ -114,8 +114,19 @@ func (merkle *MerkleTree) Serialize() {
 func Deserialize(bytes []byte) {
 }
 
-// TODO helper that will be used for serialization
-func (merkle *MerkleTree) breadthFirst() {
+func (merkle *MerkleTree) bfs() [][20]byte {
+	q := make([]*Node, 0)
+	retVal := make([][20]byte, 0)
+	q = append(q, merkle.Root) // add root
+	for len(q) != 0 {
+		node := q[0]
+		if node.left != nil && node.right != nil {
+			q = append(q, node.left, node.right)
+		}
+		retVal = append(retVal, node.data)
+		q = q[1:]
+	}
+	return retVal
 }
 
 func hash(data []byte) [20]byte {
