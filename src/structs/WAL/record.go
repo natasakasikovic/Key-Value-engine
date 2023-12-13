@@ -33,12 +33,13 @@ type Record struct {
 	keySize   uint64
 	valueSize uint64
 	key       string
-	value     string
+	value     []byte
 	toNext    uint32 // number of bytes that we
 }
 
-func NewRecord(tombstone byte, key string, value string) *Record {
-	return &Record{crc: CRC32([]byte(key + value)), timestamp: uint64(time.Now().UnixNano()), tombstone: tombstone, keySize: uint64(len(key)), valueSize: uint64(len(value)), key: key, value: value}
+func NewRecord(tombstone byte, key string, value []byte) *Record {
+	crcCheck := append([]byte(key), value...)
+	return &Record{crc: CRC32(crcCheck), timestamp: uint64(time.Now().UnixNano()), tombstone: tombstone, keySize: uint64(len(key)), valueSize: uint64(len(value)), key: key, value: value}
 }
 func (r *Record) GetRecordLength() uint64 {
 	return 4 + 8 + 1 + 8 + 8 + r.keySize + r.valueSize
@@ -72,9 +73,9 @@ func ReadSingleRecord(data []byte) (*Record, int, error) {
 	keySlice := data[KEY_START : KEY_START+keySize]
 	key := string(keySlice)
 
-	valueSlice := data[KEY_START+keySize : KEY_START+keySize+valueSize]
-	value := string(valueSlice)
-	if crc != CRC32([]byte(key+value)) {
+	value := data[KEY_START+keySize : KEY_START+keySize+valueSize]
+	crcCheck := append([]byte(key), value...)
+	if crc != CRC32(crcCheck) {
 		return r, 0, errors.New("corrupted file")
 	}
 	r.crc = crc
