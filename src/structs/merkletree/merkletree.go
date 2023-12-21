@@ -3,6 +3,7 @@ package merkletree
 import (
 	"crypto/sha1"
 	"errors"
+	"fmt"
 )
 
 type MerkleTree struct {
@@ -98,7 +99,7 @@ func (merkle *MerkleTree) VerifyTree(data [][]byte) ([]int, error) {
 		return idxNodes, nil
 	} else { // in case roots are not same, we are looking for leaves that have changed
 		for i := 0; i < len(merkle.leaves); i++ {
-			if merkle.leaves[i] != otherMerkle.leaves[i] {
+			if merkle.leaves[i].data != otherMerkle.leaves[i].data {
 				idxNodes = append(idxNodes, i)
 			}
 		}
@@ -106,14 +107,25 @@ func (merkle *MerkleTree) VerifyTree(data [][]byte) ([]int, error) {
 	}
 }
 
-// Serialize TODO
-func (merkle *MerkleTree) Serialize() {
+// function that serializes merkle tree using bfs
+func (merkle *MerkleTree) Serialize() []byte {
+	nodeData := merkle.bfs()
+	var size int = 20 * len(nodeData)
+	bytes := make([]byte, size)
+
+	for i, data := range nodeData {
+		copy(bytes[i*20:(i+1)*20], data[:])
+	}
+
+	return bytes
 }
 
 // Deserialize TODO
 func Deserialize(bytes []byte) {
+
 }
 
+// helper for serialization
 func (merkle *MerkleTree) bfs() [][20]byte {
 	q := make([]*Node, 0)
 	retVal := make([][20]byte, 0)
@@ -142,4 +154,13 @@ func addEmptyNode(nodes []*Node) []*Node {
 		parent: nil,
 	})
 	return nodes
+}
+
+func TestMerkle() {
+	content := [][]byte{[]byte("Data1"), []byte("Data2"), []byte("Data3")}
+	merkle, _ := NewTree(content)
+	list, _ := merkle.VerifyTree([][]byte{[]byte("Data1"), []byte("Data2"), []byte("Data5")}) // OK
+	fmt.Println(list)
+	bytes := merkle.Serialize() // OK
+	fmt.Println(bytes)
 }
