@@ -4,6 +4,7 @@ import (
 	"crypto/sha1"
 	"errors"
 	"fmt"
+	"reflect"
 )
 
 type MerkleTree struct {
@@ -120,9 +121,47 @@ func (merkle *MerkleTree) Serialize() []byte {
 	return bytes
 }
 
-// Deserialize TODO
-func Deserialize(bytes []byte) {
+// Deserialize reconstructs a Merkle tree from serialized content
+// uses helper - createNode to emilinate redudancy
+func Deserialize(content []byte) *MerkleTree {
+	var nodes []*Node
+	root := &Node{
+		data:   [20]byte(content[0:20]),
+		left:   nil,
+		right:  nil,
+		parent: nil,
+	}
 
+	nodes = append(nodes, root)
+	nodesToBuild := len(content)/20 - 1
+	i := 1
+
+	for nodesToBuild > 0 {
+		current := nodes[0]
+
+		current.left = createNode(content, i, current)
+		i++
+		current.right = createNode(content, i, current)
+		i++
+
+		nodes = append(nodes[1:], current.left, current.right)
+		nodesToBuild -= 2
+	}
+
+	return &MerkleTree{
+		Root:   root,
+		leaves: nodes,
+	}
+}
+
+// helper - used in deserialization
+func createNode(content []byte, i int, parent *Node) *Node {
+	return &Node{
+		data:   [20]byte(content[20*i : (i+1)*20]),
+		left:   nil,
+		right:  nil,
+		parent: parent,
+	}
 }
 
 // helper for serialization
@@ -163,4 +202,10 @@ func TestMerkle() {
 	fmt.Println(list)
 	bytes := merkle.Serialize() // OK
 	fmt.Println(bytes)
+	deserialziedMerkle := Deserialize(bytes) // OK
+	if reflect.DeepEqual(merkle, deserialziedMerkle) {
+		fmt.Println("Trees have same data")
+	} else {
+		fmt.Println("Trees dont have same data, some error occured")
+	}
 }
