@@ -23,3 +23,11 @@ func NewMemtable(data DataStructure, capacity uint64) *Memtable {
 		capacity: capacity,
 	}
 }
+
+func (memtable *Memtable) Delete(key string) {
+	memtable.data.Delete(key)
+}
+
+func (memtable *Memtable) Get(key string) string {
+	return memtable.data.Find(key)
+}
