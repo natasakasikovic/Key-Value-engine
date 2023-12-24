@@ -153,3 +153,9 @@ func roll() int {
 	}
 	return level
 }
+
+func (skipList *SkipList) ClearData() {
+	skipList.head = &node{}
+	skipList.height = 1
+	skipList.numOfElems = 0
+}

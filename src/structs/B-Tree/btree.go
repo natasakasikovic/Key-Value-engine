@@ -380,3 +380,8 @@ func (btree *BTree) Delete(key string) {
 		btree.deleteFromNode(node, key_index)
 	}
 }
+
+func (btree *BTree) ClearData() {
+	btree.root = nil
+	btree.height = 0
+}
