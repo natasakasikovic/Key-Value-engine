@@ -1,13 +1,16 @@
 package memtable
 
-import "sort"
+import (
+	"fmt"
+	"sort"
+)
 
 type DataStructure interface {
 	Insert(key string, value []byte)
 	Delete(key string) //should be logical
 	IsFull(capacity uint64) bool
-	Find(key string) string //return value of the key
-	ClearData()             //empty data from data structure
+	Find(key string) ([]byte, error) //return value of the key
+	ClearData()                      //empty data from data structure
 }
 
 type Memtable struct {
@@ -31,7 +34,7 @@ func (memtable *Memtable) Delete(key string) {
 	memtable.data.Delete(key)
 }
 
-func (memtable *Memtable) Get(key string) string {
+func (memtable *Memtable) Get(key string) ([]byte, error) {
 	return memtable.data.Find(key)
 }
 func (memtable *Memtable) Put(key string, value []byte) {
@@ -52,6 +55,7 @@ func (memtable *Memtable) FlushToSSTable() {
 	// sstableData := NewSSTable()	//uncomment this line once the SSTable is implemented
 	sort.Strings(memtable.keys)
 	for _, key := range memtable.keys {
+		fmt.Println(key)
 		// sstableData.Put(memtable.Get(key))	//uncomment this line once the SSTable is implemented
 	}
 
