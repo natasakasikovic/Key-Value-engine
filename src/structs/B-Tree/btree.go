@@ -91,7 +91,7 @@ func (btree *BTree) SearchRef(key string) *MemtableValue {
 
 //Search returns the value represented by the passed key, as well as a boolean indicating if the key exists.
 //If the key isn't found, the value returned will be an empty struct.
-func (btree *BTree) Search(key string) (MemtableValue, bool) {
+func (btree *BTree) Find(key string) (MemtableValue, bool) {
 	var ref *MemtableValue = btree.SearchRef(key)
 	if ref == nil {
 		return MemtableValue{}, false
