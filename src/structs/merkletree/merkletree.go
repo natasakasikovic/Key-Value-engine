@@ -125,6 +125,7 @@ func (merkle *MerkleTree) Serialize() []byte {
 // uses helper - createNode to emilinate redudancy
 func Deserialize(content []byte) *MerkleTree {
 	var nodes []*Node
+	var emptyHash [20]byte = hash([]byte{})
 	root := &Node{
 		data:   [20]byte(content[0:20]),
 		left:   nil,
@@ -144,7 +145,14 @@ func Deserialize(content []byte) *MerkleTree {
 		current.right = createNode(content, i, current)
 		i++
 
-		nodes = append(nodes[1:], current.left, current.right)
+		nodes = append(nodes, current.left)
+
+		// if node in tree was added as empty - then it wont have any children and we wont add it to list except in one case - if it is leaf
+		if (current.right.data == emptyHash && nodesToBuild == 2) || current.right.data != emptyHash {
+			nodes = append(nodes, current.right)
+		}
+
+		nodes = nodes[1:]
 		nodesToBuild -= 2
 	}
 
@@ -196,10 +204,10 @@ func addEmptyNode(nodes []*Node) []*Node {
 }
 
 func TestMerkle() {
-	content := [][]byte{[]byte("Data1"), []byte("Data2"), []byte("Data3")}
+	content := [][]byte{[]byte("Data1"), []byte("Data2"), []byte("Data3"), []byte("Data1"), []byte("Data2"), []byte("Data1")}
 	merkle, _ := NewTree(content)
-	list, _ := merkle.VerifyTree([][]byte{[]byte("Data1"), []byte("Data2"), []byte("Data5")}) // OK
-	fmt.Println(list)
+	// list, _ := merkle.VerifyTree([][]byte{[]byte("Data1"), []byte("Data2"), []byte("Data5")}) // OK
+	// fmt.Println(list)
 	bytes := merkle.Serialize() // OK
 	fmt.Println(bytes)
 	deserialziedMerkle := Deserialize(bytes) // OK
