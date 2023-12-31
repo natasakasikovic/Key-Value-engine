@@ -15,6 +15,13 @@ type DataStructure interface {
 	ClearData()                                    //empty data from data structure
 }
 
+var Memtables = struct {
+	size       uint
+	current    uint
+	flush      uint
+	collection []*Memtable
+}{size: 0, current: 0, flush: 0, collection: nil}
+
 type Memtable struct {
 	data     DataStructure
 	capacity uint64
@@ -33,20 +40,31 @@ func NewMemtable(data DataStructure, capacity uint64) *Memtable {
 }
 
 func (memtable *Memtable) Delete(key string) {
-	memtable.data.Delete(key)
+	Memtables.collection[Memtables.current].data.Delete(key)
 }
 
 func (memtable *Memtable) Get(key string) (model.MemtableRecord, error) {
-	return memtable.data.Find(key)
+	return Memtables.collection[Memtables.current].data.Find(key)
 }
 func (memtable *Memtable) Put(key string, value []byte, timestamp uint64) {
 
+	memtable = Memtables.collection[Memtables.current]
+
 	if memtable.data.IsFull(memtable.capacity) {
-		//do flush
-		memtable.FlushToSSTable()
-		//empty memtable
-		memtable.data.ClearData()
-		memtable.keys = nil
+		if Memtables.current == Memtables.size-1 {
+			//do flush
+			Memtables.collection[Memtables.flush].FlushToSSTable()
+			//empty memtable
+			memtable = Memtables.collection[Memtables.flush]
+			Memtables.current = Memtables.flush
+			Memtables.flush += 1
+			memtable.data.ClearData()
+			memtable.keys = nil
+		} else {
+			Memtables.current += 1
+			memtable = Memtables.collection[Memtables.current]
+		}
+
 	}
 	memValue := model.MemtableRecord{
 		Value:     value,
