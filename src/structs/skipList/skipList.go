@@ -4,6 +4,8 @@ import (
 	"errors"
 	"math/rand"
 	"strings"
+
+	"github.com/natasakasikovic/Key-Value-engine/src/model"
 )
 
 // NOTE: skip list and b-tree must support the same methods (which have the same name)
@@ -12,9 +14,15 @@ const (
 	maxHeight = 16 // applied in the original skip list
 )
 
+// type MemtableValue struct {
+// 	value     []byte
+// 	tombstone byte
+// 	timestamp uint64
+// }
+
 type node struct {
 	key   string
-	val   []byte
+	val   model.MemtableRecord
 	tower [maxHeight]*node // a collection of forwarded pointers linking the node to subsequent nodes on each corresponding level of the skip list
 }
 
@@ -56,7 +64,7 @@ func (skipList *SkipList) search(key string) (*node, [maxHeight]*node) {
 }
 
 // inserting a new node
-func (skipList *SkipList) Insert(key string, val []byte) {
+func (skipList *SkipList) Insert(key string, val model.MemtableRecord) {
 	found, journey := skipList.search(key)
 
 	// if the requested key already exists we can swap its current value for the newly supplied value
@@ -125,11 +133,11 @@ func (skipList *SkipList) shrink() {
 }
 
 // finding the precise value residing at a requested key; returns -1 if key not found and error
-func (skipList *SkipList) Find(key string) ([]byte, error) {
+func (skipList *SkipList) Find(key string) (model.MemtableRecord, error) {
 	found, _ := skipList.search(key)
 
 	if found == nil {
-		return nil, errors.New("key not found")
+		return model.MemtableRecord{}, errors.New("key not found")
 	}
 
 	return found.val, nil
