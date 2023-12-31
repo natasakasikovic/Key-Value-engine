@@ -3,14 +3,16 @@ package memtable
 import (
 	"fmt"
 	"sort"
+
+	"github.com/natasakasikovic/Key-Value-engine/src/model"
 )
 
 type DataStructure interface {
-	Insert(key string, value []byte)
+	Insert(key string, value model.MemtableRecord)
 	Delete(key string) //should be logical
 	IsFull(capacity uint64) bool
-	Find(key string) ([]byte, error) //return value of the key
-	ClearData()                      //empty data from data structure
+	Find(key string) (model.MemtableRecord, error) //return value of the key
+	ClearData()                                    //empty data from data structure
 }
 
 type Memtable struct {
@@ -34,10 +36,10 @@ func (memtable *Memtable) Delete(key string) {
 	memtable.data.Delete(key)
 }
 
-func (memtable *Memtable) Get(key string) ([]byte, error) {
+func (memtable *Memtable) Get(key string) (model.MemtableRecord, error) {
 	return memtable.data.Find(key)
 }
-func (memtable *Memtable) Put(key string, value []byte) {
+func (memtable *Memtable) Put(key string, value []byte, timestamp uint64) {
 
 	if memtable.data.IsFull(memtable.capacity) {
 		//do flush
@@ -46,8 +48,13 @@ func (memtable *Memtable) Put(key string, value []byte) {
 		memtable.data.ClearData()
 		memtable.keys = nil
 	}
+	memValue := model.MemtableRecord{
+		Value:     value,
+		Tombstone: 0,
+		Timestamp: timestamp,
+	}
 	//put data to memtable
-	memtable.data.Insert(key, value)
+	memtable.data.Insert(key, memValue)
 	memtable.keys = append(memtable.keys, key)
 
 }
