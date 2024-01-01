@@ -2,23 +2,16 @@ package skiplist
 
 import (
 	"errors"
+	"fmt"
 	"math/rand"
 	"strings"
 
 	"github.com/natasakasikovic/Key-Value-engine/src/model"
 )
 
-// NOTE: skip list and b-tree must support the same methods (which have the same name)
-
 const (
 	maxHeight = 16 // applied in the original skip list
 )
-
-// type MemtableValue struct {
-// 	value     []byte
-// 	tombstone byte
-// 	timestamp uint64
-// }
 
 type node struct {
 	key   string
@@ -57,6 +50,7 @@ func (skipList *SkipList) search(key string) (*node, [maxHeight]*node) {
 		}
 		journey[level] = prev
 	}
+
 	if next != nil && (key == next.key) {
 		return next, journey
 	}
@@ -68,7 +62,7 @@ func (skipList *SkipList) Insert(key string, val model.MemtableRecord) {
 	found, journey := skipList.search(key)
 
 	// if the requested key already exists we can swap its current value for the newly supplied value
-	if found != nil {
+	if found != nil && found.val.Tombstone == 1 {
 		// update value for existing key
 		found.val = val
 		skipList.numOfElems -= 1
@@ -99,44 +93,22 @@ func (skipList *SkipList) Insert(key string, val model.MemtableRecord) {
 	skipList.numOfElems += 1
 }
 
-// deleting a node;
-// TODO: implement logical delete instead of permanent
-func (skipList *SkipList) Delete(key string) { //returns true if the deletion was successful, false otherwise.
-	found, journey := skipList.search(key)
+// logical deletion
+func (skipList *SkipList) Delete(key string) {
+	found, _ := skipList.search(key)
 
 	if found == nil {
 		return // if a node with the requested key doesn't exist
 	}
 
-	// TODO: set attribute Tombstone on true (1) instead of of binding the pointers (loop is unnecessary)
-	for level := 0; level < skipList.height; level++ {
-		// we backtrack the journey array, looking for the nodes neighboring the node requested for delition
-		if journey[level].tower[level] != found {
-			break
-		}
-		// split the node request for delition from its neighbors and splice its former neighbors together
-		journey[level].tower[level] = found.tower[level]
-		found.tower[level] = nil
-	}
-	found = nil
-	skipList.shrink() // adjust the new height if necessary
-}
-
-// TODO: delete this method when you enable logical delete
-// make sure the correct height is reflected after possible reduction
-func (skipList *SkipList) shrink() {
-	for level := skipList.height - 1; level >= 0; level-- {
-		if skipList.head.tower[level] == nil {
-			skipList.height--
-		}
-	}
+	found.val.Tombstone = 1
 }
 
 // finding the precise value residing at a requested key; returns -1 if key not found and error
 func (skipList *SkipList) Find(key string) (model.MemtableRecord, error) {
 	found, _ := skipList.search(key)
 
-	if found == nil {
+	if found == nil || found.val.Tombstone == 1 {
 		return model.MemtableRecord{}, errors.New("key not found")
 	}
 
@@ -158,6 +130,25 @@ func roll() int {
 		}
 	}
 	return level
+}
+
+func (skipList *SkipList) PrintSkipList() {
+	fmt.Println("SkipList:")
+	for level := 16 - 1; level >= 0; level-- {
+		node := skipList.head
+		fmt.Printf("Level %d: ", level)
+		for node != nil {
+			val := "nil"
+			if node.val.Tombstone == 1 {
+				val = "deleted"
+			} else if node.key != "" {
+				val = node.key
+			}
+			fmt.Printf("[%s] ", val)
+			node = node.tower[level]
+		}
+		fmt.Println()
+	}
 }
 
 func (skipList *SkipList) ClearData() {
