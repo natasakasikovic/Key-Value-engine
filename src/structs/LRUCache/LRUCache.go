@@ -22,7 +22,10 @@ func (lru *LRUCache) Add(key string, value []byte) {
 }
 
 func (lru *LRUCache) Get(key string) any {
-	elem := lru.hashMap[key]
+	elem, exists := lru.hashMap[key]
+	if !exists {
+		return nil
+	}
 	lru.list.MoveToFront(elem)
 	return elem.Value
 }
