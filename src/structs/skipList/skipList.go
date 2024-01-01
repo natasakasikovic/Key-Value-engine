@@ -29,7 +29,7 @@ func NewSkipList() *SkipList {
 	skipList := &SkipList{}
 	skipList.head = &node{}
 	skipList.height = 1
-	skipList.numOfElems = 1
+	skipList.numOfElems = 0
 	return skipList
 }
 
@@ -65,7 +65,6 @@ func (skipList *SkipList) Insert(key string, val model.MemtableRecord) {
 	if found != nil && found.val.Tombstone == 1 {
 		// update value for existing key
 		found.val = val
-		skipList.numOfElems -= 1
 		return
 	}
 
@@ -132,6 +131,12 @@ func roll() int {
 	return level
 }
 
+func (skipList *SkipList) ClearData() {
+	skipList.head = &node{}
+	skipList.height = 1
+	skipList.numOfElems = 0
+}
+
 func (skipList *SkipList) PrintSkipList() {
 	fmt.Println("SkipList:")
 	for level := 16 - 1; level >= 0; level-- {
@@ -149,10 +154,4 @@ func (skipList *SkipList) PrintSkipList() {
 		}
 		fmt.Println()
 	}
-}
-
-func (skipList *SkipList) ClearData() {
-	skipList.head = &node{}
-	skipList.height = 1
-	skipList.numOfElems = 0
 }
