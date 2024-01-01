@@ -41,6 +41,7 @@ func NewMemtable(data DataStructure, capacity uint64) *Memtable {
 }
 func InitMemtables(memtable_size uint64, memtable_structure string, num_of_instances uint64) {
 	Memtables.collection = make([]*Memtable, num_of_instances)
+	Memtables.size = uint(num_of_instances)
 
 	switch memtable_structure {
 	case "skipList":
@@ -68,16 +69,20 @@ func Get(key string) (model.MemtableRecord, error) {
 }
 func Put(key string, value []byte, timestamp uint64) {
 
-	memtable := Memtables.collection[Memtables.current]
+	memtable := Memtables.collection[Memtables.current] //current memtable
 
 	if memtable.data.IsFull(memtable.capacity) {
-		if Memtables.current == Memtables.size-1 {
+		if Memtables.current == Memtables.size-1 { //if current memtable is full and is last
 			//do flush
 			Memtables.collection[Memtables.flush].FlushToSSTable()
 			//empty memtable
 			memtable = Memtables.collection[Memtables.flush]
 			Memtables.current = Memtables.flush
-			Memtables.flush += 1
+			if Memtables.flush == Memtables.size-1 { //when flushed memtable is last in collection, next for flush is memtable at position 0
+				Memtables.flush = 0
+			} else {
+				Memtables.flush += 1
+			}
 			memtable.data.ClearData()
 			memtable.keys = nil
 		} else {
