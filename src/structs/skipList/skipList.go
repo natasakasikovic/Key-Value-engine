@@ -7,8 +7,6 @@ import (
 )
 
 // NOTE: skip list and b-tree must support the same methods (which have the same name)
-// TODO: Change the type when a concrete type for memtable data is made
-type MemtableValue struct{}
 
 const (
 	maxHeight = 16 // applied in the original skip list
@@ -16,14 +14,14 @@ const (
 
 type node struct {
 	key   string
-	val   MemtableValue
+	val   []byte
 	tower [maxHeight]*node // a collection of forwarded pointers linking the node to subsequent nodes on each corresponding level of the skip list
 }
 
 type SkipList struct {
 	head       *node // starting head node
 	height     int   // total number of levels that all nodes are currently occupying
-	numOfElems int
+	numOfElems uint64
 }
 
 func NewSkipList() *SkipList {
@@ -58,7 +56,7 @@ func (skipList *SkipList) search(key string) (*node, [maxHeight]*node) {
 }
 
 // inserting a new node
-func (skipList *SkipList) Insert(key string, val MemtableValue) {
+func (skipList *SkipList) Insert(key string, val []byte) {
 	found, journey := skipList.search(key)
 
 	// if the requested key already exists we can swap its current value for the newly supplied value
@@ -127,18 +125,18 @@ func (skipList *SkipList) shrink() {
 }
 
 // finding the precise value residing at a requested key; returns -1 if key not found and error
-func (skipList *SkipList) Find(key string) (MemtableValue, error) {
+func (skipList *SkipList) Find(key string) ([]byte, error) {
 	found, _ := skipList.search(key)
 
 	if found == nil {
-		return MemtableValue{}, errors.New("key not found")
+		return nil, errors.New("key not found")
 	}
 
 	return found.val, nil
 }
 
 // capacity is attribute in interface memtable
-func (skipList *SkipList) IsFull(capacity int) bool {
+func (skipList *SkipList) IsFull(capacity uint64) bool {
 	return skipList.numOfElems >= capacity
 }
 
@@ -152,4 +150,10 @@ func roll() int {
 		}
 	}
 	return level
+}
+
+func (skipList *SkipList) ClearData() {
+	skipList.head = &node{}
+	skipList.height = 1
+	skipList.numOfElems = 0
 }
