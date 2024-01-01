@@ -5,6 +5,7 @@ import (
 	"sort"
 
 	"github.com/natasakasikovic/Key-Value-engine/src/model"
+	skiplist "github.com/natasakasikovic/Key-Value-engine/src/structs/skipList"
 )
 
 type DataStructure interface {
@@ -38,17 +39,36 @@ func NewMemtable(data DataStructure, capacity uint64) *Memtable {
 		capacity: capacity,
 	}
 }
+func InitMemtables(memtable_size uint64, memtable_structure string, num_of_instances uint64) {
+	Memtables.collection = make([]*Memtable, num_of_instances)
 
-func (memtable *Memtable) Delete(key string) {
+	switch memtable_structure {
+	case "skipList":
+		for i := 0; i < int(num_of_instances); i++ {
+			Memtables.collection[i] = NewMemtable(skiplist.NewSkipList(), memtable_size)
+		}
+	case "bTree":
+		for i := 0; i < int(num_of_instances); i++ {
+			// Memtables.collection[i] = NewMemtable(bTree.NewSkipList(), memtable_size) //commented out until B-Tree is modified
+		}
+	default:
+		for i := 0; i < int(num_of_instances); i++ {
+			Memtables.collection[i] = NewMemtable(skiplist.NewSkipList(), memtable_size)
+		}
+	}
+
+}
+
+func Delete(key string) {
 	Memtables.collection[Memtables.current].data.Delete(key)
 }
 
-func (memtable *Memtable) Get(key string) (model.MemtableRecord, error) {
+func Get(key string) (model.MemtableRecord, error) {
 	return Memtables.collection[Memtables.current].data.Find(key)
 }
-func (memtable *Memtable) Put(key string, value []byte, timestamp uint64) {
+func Put(key string, value []byte, timestamp uint64) {
 
-	memtable = Memtables.collection[Memtables.current]
+	memtable := Memtables.collection[Memtables.current]
 
 	if memtable.data.IsFull(memtable.capacity) {
 		if Memtables.current == Memtables.size-1 {
