@@ -2,12 +2,13 @@ package LRUCache
 
 import (
 	"container/list"
+	"fmt"
 	"github.com/natasakasikovic/Key-Value-engine/src/structs/memtable"
 )
 
 type Data struct {
-	value []byte
 	key   string
+	value []byte
 }
 
 func NewData(value []byte, key string) *Data {
@@ -21,8 +22,8 @@ type LRUCache struct {
 	numOfElems uint32
 }
 
-func NewLRUCache() *LRUCache {
-	return &LRUCache{hashMap: make(map[string]*list.Element), list: list.New()}
+func NewLRUCache(limit uint32) *LRUCache {
+	return &LRUCache{hashMap: make(map[string]*list.Element), list: list.New(), limit: limit, numOfElems: 0}
 }
 
 func (lru *LRUCache) Add(key string, value []byte) {
@@ -55,5 +56,12 @@ func (lru *LRUCache) UpdateKeys(mt *memtable.Memtable) {
 			value := record.Value
 			elem.Value.(*Data).value = value
 		}
+	}
+}
+func (lru *LRUCache) Print() {
+	elem := lru.list.Front()
+	for elem != nil {
+		fmt.Println(elem.Value)
+		elem = elem.Next()
 	}
 }
