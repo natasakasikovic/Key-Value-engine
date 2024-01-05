@@ -82,7 +82,7 @@ func (btree *BTree) searchNodeForKey(key string) (*btree_node, int) {
 
 // SearchRef returns a pointer to the value represented by the passed key.
 // If the passed key is not present in the tree, nil is returned.
-func (btree *BTree) SearchRef(key string) *model.MemtableRecord {
+func (btree *BTree) SearchRef(key string) *model.Record {
 	node_p, index := btree.searchNodeForKey(key)
 
 	if index == -1 {
@@ -94,17 +94,17 @@ func (btree *BTree) SearchRef(key string) *model.MemtableRecord {
 
 // Search returns the value represented by the passed key.
 // If the key isn't found, an error is returned.
-func (btree *BTree) Find(key string) (model.MemtableRecord, error) {
-	var ref *model.MemtableRecord = btree.SearchRef(key)
+func (btree *BTree) Find(key string) (model.Record, error) {
+	var ref *model.Record = btree.SearchRef(key)
 	if ref == nil || ref.Tombstone == 1 {
-		return model.MemtableRecord{}, errors.New("key not found")
+		return model.Record{}, errors.New("key not found")
 	} else {
 		return *ref, nil
 	}
 }
 
 // Returns the median key and the value associated with it of a certain node.
-func (btree *BTree) mediansOfNode(node *btree_node) (string, model.MemtableRecord) {
+func (btree *BTree) mediansOfNode(node *btree_node) (string, model.Record) {
 	var median_index int = node.key_value_list.Size() / 2
 	return node.key_value_list.Get(median_index)
 }
@@ -192,7 +192,7 @@ func (btree *BTree) checkNodeOverflow(node *btree_node) {
 }
 
 // Inserts a key-value pair into a node and returns the index it was inserted at.
-func (btree *BTree) insertIntoNode(node *btree_node, key string, value model.MemtableRecord) int {
+func (btree *BTree) insertIntoNode(node *btree_node, key string, value model.Record) int {
 	//If a node contains enough space for the key, certain elements might have to be
 	//shifted to the right for the key to fit, and the key list to remain sorted
 
@@ -210,7 +210,7 @@ func (btree *BTree) insertIntoNode(node *btree_node, key string, value model.Mem
 	return node.key_value_list.Size() - 1
 }
 
-func (btree *BTree) Insert(key string, value model.MemtableRecord) {
+func (btree *BTree) Insert(key string, value model.Record) {
 	node, key_index := btree.searchNodeForKey(key)
 
 	//If the key already exists in the tree, just change it's represented value.
