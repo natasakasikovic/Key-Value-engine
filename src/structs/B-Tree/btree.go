@@ -21,14 +21,14 @@ type btree_node struct {
 }
 
 // Initializes an empty BTree of the passed order
-func NewBTree(order int) BTree {
+func NewBTree(order int) *BTree {
 	var head *btree_node = &btree_node{key_value_list: kv_vector{},
 		is_leaf:  true,
 		subtrees: make([]*btree_node, order+2),
 		parent:   nil,
 	}
 
-	return BTree{root: head, order: order, height: 0, size: 0}
+	return &BTree{root: head, order: order, height: 0, size: 0}
 }
 
 // Call when a node is no longer needed, so it can be removed from memory by the garbage collector.
