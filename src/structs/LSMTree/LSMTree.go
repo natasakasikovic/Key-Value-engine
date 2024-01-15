@@ -49,7 +49,10 @@ func NewLSMTree(conf config.Config) LSMTree {
 	return tree
 }
 
-func mergeSSTables(sstableArray []*SSTableInterface) *SSTableInterface {
+// Merges the passed sstables and splits them into new sstables
+// Each new sstable contains at most maxSSTableElem elements
+// Merges into a single sstable if maxSSTableElem is 0
+func mergeSSTables(maxSSTableElem uint32, sstableArray []*SSTableInterface) []*SSTableInterface {
 	var sstableCount int = len(sstableArray)
 	var indexes []int = make([]int, sstableCount)
 
@@ -129,6 +132,8 @@ func mergeSSTables(sstableArray []*SSTableInterface) *SSTableInterface {
 	}
 
 	var newRecords []tempRecord = make([]tempRecord, 0)
+	var elementCounter uint32 = 0 //The number of records in the new records array
+	var newSSTables []*SSTableInterface = make([]*SSTableInterface, 0)
 
 	for {
 		updateRecordIterators()
@@ -145,11 +150,18 @@ func mergeSSTables(sstableArray []*SSTableInterface) *SSTableInterface {
 		var minIndex int = getIndexOfIteratorWithKey(minKey)
 		if records[minIndex].Tombstone == 0 {
 			newRecords = append(newRecords, records[minIndex])
+			elementCounter++
 		}
 		indexes[minIndex]++
+
+		if elementCounter >= maxSSTableElem && maxSSTableElem > 0 {
+			elementCounter = 0
+			newSSTables = append(newSSTables, newSSTable(newRecords))
+			newRecords = make([]tempRecord, 0)
+		}
 	}
 
-	return newSSTable(newRecords)
+	return newSSTables
 }
 
 func (tree *LSMTree) sizeTieredCompaction(levelIndex uint32) {
@@ -158,7 +170,7 @@ func (tree *LSMTree) sizeTieredCompaction(levelIndex uint32) {
 		toMerge = append(toMerge, tree.sstableTree[levelIndex][i])
 	}
 
-	var merged *SSTableInterface = mergeSSTables(toMerge)
+	var merged []*SSTableInterface = mergeSSTables(0, toMerge)
 	//Delete old sstables
 	for i := 0; i < len(tree.sstableTree[levelIndex]); i++ {
 		tree.sstableTree[levelIndex][i].Delete()
@@ -167,7 +179,7 @@ func (tree *LSMTree) sizeTieredCompaction(levelIndex uint32) {
 	clear(tree.sstableTree[levelIndex])
 	tree.sstableTree[levelIndex] = tree.sstableTree[levelIndex][:0]
 
-	tree.sstableTree[levelIndex] = append(tree.sstableTree[levelIndex], merged)
+	tree.sstableTree[levelIndex] = append(tree.sstableTree[levelIndex], merged[0])
 }
 
 func (tree *LSMTree) compact(levelIndex uint32) {
