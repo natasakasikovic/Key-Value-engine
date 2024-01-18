@@ -15,15 +15,22 @@ const (
 )
 
 type WAL struct {
-	maxBytesPerFile uint32
-	currentFile     *os.File
-	segmentNames    []string
+	maxBytesPerFile      uint32
+	currentFile          *os.File
+	segmentNames         []string
+	lowWaterMark         int
+	bytesFromLastSegment int64
 }
 
 func NewWAL(maxBytesPerFile uint32) (*WAL, error) {
 
 	files, err := os.ReadDir("log")
-	if err != nil {
+	if os.IsNotExist(err) {
+		err := os.Mkdir("log", os.ModeDir)
+		if err != nil {
+			return nil, err
+		}
+	} else if err != nil {
 		return nil, err
 	}
 	var list []string // list of file names
@@ -48,11 +55,18 @@ func NewWAL(maxBytesPerFile uint32) (*WAL, error) {
 		return nil, err
 	}
 	return &WAL{
-		maxBytesPerFile: maxBytesPerFile,
-		currentFile:     currentFile,
-		segmentNames:    list}, nil
+		maxBytesPerFile:      maxBytesPerFile,
+		currentFile:          currentFile,
+		segmentNames:         list,
+		lowWaterMark:         1,
+		bytesFromLastSegment: 0}, nil
 }
-
+func (wal *WAL) Commit(key string, value []byte, tombstone byte) {
+	err := wal.Append(NewRecord(tombstone, key, value))
+	if err != nil {
+		return
+	}
+}
 func (wal *WAL) Append(r *Record) error {
 	data := r.RecordToBytes()
 	fileLength, err := getFileLength(wal.currentFile)
@@ -111,10 +125,26 @@ func (wal *WAL) Append(r *Record) error {
 
 func (wal *WAL) ReadRecords() error {
 	bytesToTransfer := make([]byte, 0)
-	for _, fileName := range wal.segmentNames {
-		file, err := os.OpenFile("log/"+fileName, os.O_RDONLY, 644)
+	for i, fileName := range wal.segmentNames {
+		file, err := os.OpenFile("log"+string(os.PathSeparator)+fileName, os.O_RDONLY, 644)
 		if err != nil {
 			return err
+		}
+		/*temp := fileName[4:8]
+		intNumber, err := strconv.Atoi(temp)
+
+		if err != nil {
+			return err
+		}
+		if intNumber < wal.lowWaterMark {
+			continue
+		}*/
+		//Skip bytes from last file
+		if i == 0 {
+			_, err := file.Seek(wal.bytesFromLastSegment, 0)
+			if err != nil {
+				return err
+			}
 		}
 		content, err := io.ReadAll(file)
 		if err != nil {
@@ -158,6 +188,57 @@ func (wal *WAL) ReadRecords() error {
 				}
 			}
 		}
+	}
+	return nil
+}
+
+func (wal *WAL) ClearLog() error {
+	for i := 0; i < wal.lowWaterMark-1; i++ {
+		err := os.Remove("log" + string(os.PathSeparator) + wal.segmentNames[i])
+		if err != nil {
+			return err
+		}
+	}
+	newSegmentNames := make([]string, len(wal.segmentNames)-wal.lowWaterMark+1)
+	fmt.Println(wal.currentFile.Stat())
+	err := wal.currentFile.Close()
+	fmt.Println(wal.currentFile.Stat())
+	if err != nil {
+		return err
+	}
+	for i := wal.lowWaterMark - 1; i < len(wal.segmentNames); i++ {
+		num := i - wal.lowWaterMark + 2
+		newName := fmt.Sprintf("%s%04d.log", FILE_NAME, num)
+		oldName := wal.segmentNames[i]
+		oldPath := "log" + string(os.PathSeparator) + oldName
+		newPath := "log" + string(os.PathSeparator) + newName
+		fmt.Println("Current file name: ", wal.currentFile.Name())
+		fmt.Println("File to rename:    ", oldPath)
+		fmt.Println("New name for file: ", newPath)
+		err := os.Rename(oldPath, newPath)
+		if err != nil {
+			log.Fatal(err)
+			return err
+		}
+		newSegmentNames[i-wal.lowWaterMark+1] = newPath
+	}
+	wal.currentFile, err = os.OpenFile("log"+string(os.PathSeparator)+newSegmentNames[len(newSegmentNames)-1], os.O_RDWR|os.O_CREATE, 0644)
+	wal.segmentNames = newSegmentNames
+	fmt.Println(wal.segmentNames)
+
+	return nil
+}
+
+func (wal *WAL) UpdateWatermark() error {
+	wal.lowWaterMark = len(wal.segmentNames)
+	fileLength, err := getFileLength(wal.currentFile)
+	if err != nil {
+		return err
+	}
+	wal.bytesFromLastSegment = fileLength
+	err = wal.ClearLog()
+	if err != nil {
+		return err
 	}
 	return nil
 }
