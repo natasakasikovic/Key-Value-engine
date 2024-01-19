@@ -3,6 +3,7 @@ package WAL
 import (
 	"encoding/binary"
 	"errors"
+	"fmt"
 	"hash/crc32"
 	"time"
 )
@@ -34,9 +35,16 @@ type Record struct {
 	valueSize uint64
 	key       string
 	value     []byte
-	toNext    uint32 // number of bytes that we
 }
 
+func (r *Record) String() string {
+	if r.tombstone == 0 {
+		return fmt.Sprintf("  %s\t%s", r.key, string(r.value))
+	} else {
+		return fmt.Sprintf("✝ %s\t%s", r.key, string(r.value))
+	}
+
+}
 func NewRecord(tombstone byte, key string, value []byte) *Record {
 	crcCheck := append([]byte(key), value...)
 	return &Record{crc: CRC32(crcCheck), timestamp: uint64(time.Now().UnixNano()), tombstone: tombstone, keySize: uint64(len(key)), valueSize: uint64(len(value)), key: key, value: value}
