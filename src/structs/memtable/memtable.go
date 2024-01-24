@@ -11,11 +11,11 @@ import (
 )
 
 type DataStructure interface {
-	Insert(key string, value model.MemtableRecord)
+	Insert(key string, value model.Record)
 	Delete(key string) //should be logical
 	IsFull(capacity uint64) bool
-	Find(key string) (model.MemtableRecord, error) //return value of the key
-	ClearData()                                    //empty data from data structure
+	Find(key string) (model.Record, error) //return value of the key
+	ClearData()                            //empty data from data structure
 }
 
 var Memtables = struct {
@@ -70,7 +70,7 @@ func (memtable *Memtable) delete(key string) {
 	memtable.data.Delete(key)
 }
 
-func find(key string) (model.MemtableRecord, error) {
+func find(key string) (model.Record, error) {
 	return Memtables.collection[Memtables.current].data.Find(key)
 }
 
@@ -122,7 +122,7 @@ func Put(key string, value []byte, timestamp uint64, tombstone byte) {
 		}
 
 	}
-	memValue := model.MemtableRecord{
+	memValue := model.Record{
 		Value:     value,
 		Tombstone: tombstone,
 		Timestamp: timestamp,
@@ -133,18 +133,18 @@ func Put(key string, value []byte, timestamp uint64, tombstone byte) {
 
 }
 
-func Get(key string) (model.MemtableRecord, error) {
+func Get(key string) (model.Record, error) {
 	for _, memtable := range Memtables.collection {
 		record, err := memtable.data.Find(key)
 		if err == nil {
 			return record, nil
 		}
 	}
-	return model.MemtableRecord{}, errors.New("record not found")
+	return model.Record{}, errors.New("record not found")
 }
 
 func (memtable *Memtable) flushToSSTable() {
-	var records []*model.MemtableRecord
+	var records []*model.Record
 	sort.Strings(memtable.Keys)
 	for _, key := range memtable.Keys {
 		record, err := find(key)

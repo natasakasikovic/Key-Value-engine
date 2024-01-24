@@ -1,7 +1,9 @@
 package sstable
 
 import (
+	"bytes"
 	"encoding/binary"
+	"errors"
 	"fmt"
 	"os"
 
@@ -97,7 +99,7 @@ func (sstable *SSTable) makeSingleFile(path string, records []*model.Record, n i
 // function that calls every serialization
 // saves header one after the other -> length of min key, so we know how we need to read to get min key
 // same things is done for max key, then we saved offsets for data, index and summary
-// returns content (that one needed for building merkle tree)
+
 func (sstable *SSTable) writeToSingleFile(records []*model.Record, n int, m int) {
 	var content [][]byte
 
@@ -127,6 +129,80 @@ func (sstable *SSTable) writeToSingleFile(records []*model.Record, n int, m int)
 
 	sstable.writeToFile(sstable.data, content)
 
+}
+
+// makes separate files: data, summary, index;
+// param path: path to the folder where files will be saved;
+// param records: array of pointers to records from memtable;
+// param n: index degree;
+// param m: summary degree;
+// returns error: if it occured during actions connected to files;
+func (sstable *SSTable) makeSeparateFiles(path string, records []*model.Record, n int, m int) error {
+
+	data, _ := makeFile(path, "Data")
+	summary, _ := makeFile(path, "Summary")
+	index, _ := makeFile(path, "Index")
+	filter, _ := makeFile(path, "Filter")
+	compressionInfo, _ := makeFile(path, "CompressionInfo") // TODO: write information about compression
+	if data != nil && index != nil && summary != nil && compressionInfo != nil {
+		sstable.data = data
+		sstable.index = index
+		sstable.summary = summary
+
+		minKeyBytes := []byte(sstable.minKey)
+		maxKeyBytes := []byte(sstable.maxKey)
+
+		var minKeyLength uint64 = uint64(len(minKeyBytes))
+		var maxKeyLength uint64 = uint64(len(maxKeyBytes))
+
+		maxKeyInfo := append(uint64ToBytes(maxKeyLength), maxKeyBytes...)
+		minKeyInfo := append(uint64ToBytes(minKeyLength), minKeyBytes...)
+
+		minKeyInfoSerialized := append(uint64ToBytes(minKeyLength), minKeyBytes...)
+		maxKeyInfoSerialized := append(uint64ToBytes(maxKeyLength), maxKeyBytes...)
+
+		var contentSummary [][]byte = [][]byte{minKeyInfoSerialized, maxKeyInfoSerialized}
+
+		var contentData [][]byte = sstable.serializeData(records)
+		var contentIndex [][]byte = sstable.serializeIndexSummary(contentData, n)
+		contentSummary = append(contentSummary, sstable.serializeIndexSummary(contentIndex, m)...)
+		contentSummary = append(contentSummary, minKeyInfo, maxKeyInfo)
+
+		var contentBf [][]byte = [][]byte{sstable.bf.Serialize()}
+
+		sstable.writeToFile(data, contentData)
+		sstable.writeToFile(index, contentIndex)
+		sstable.writeToFile(summary, contentSummary)
+		sstable.writeToFile(filter, contentBf)
+		return nil
+	}
+	return errors.New("error occured")
+}
+
+func (sstable *SSTable) serializeIndexSummary(content [][]byte, n int) [][]byte {
+	var retVal [][]byte
+	var offset int = 0
+	for i := 0; i < len(content); i++ {
+		offset += len(content[i])
+		if i%n == 0 {
+			keySize, key := getKey(content[i])
+			var buffer bytes.Buffer
+			binary.Write(&buffer, binary.BigEndian, keySize)
+			binary.Write(&buffer, binary.BigEndian, key)
+			binary.Write(&buffer, binary.BigEndian, offset)
+			retVal = append(retVal, buffer.Bytes())
+		}
+	}
+	return retVal
+}
+
+func getKey(item []byte) (uint64, string) {
+	var keySize uint64
+	buffer := bytes.NewReader(item)
+	binary.Read(buffer, binary.BigEndian, keySize)
+	keyBytes := make([]byte, keySize)
+	buffer.Read(keyBytes)
+	return keySize, string(keyBytes)
 }
 
 // helper used in previous function
