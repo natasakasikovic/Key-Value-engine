@@ -31,7 +31,7 @@ func newSSTable(records []tempRecord) *SSTableInterface {
 //End of temporary SSTable interface
 
 type LSMTree struct {
-	sstableTree     [][]*SSTableInterface //Array of arrays of SSTable pointers
+	sstableArrays   [][]*SSTableInterface //Array of arrays of SSTable pointers
 	maxDepth        uint32
 	compressionOn   bool
 	compressionType string
@@ -39,9 +39,9 @@ type LSMTree struct {
 
 func NewLSMTree(conf config.Config) LSMTree {
 	var tree LSMTree = LSMTree{}
-	tree.sstableTree = make([][]*SSTableInterface, conf.LSMTreeMaxDepth)
+	tree.sstableArrays = make([][]*SSTableInterface, conf.LSMTreeMaxDepth)
 	for i := 0; i < int(conf.LSMTreeMaxDepth); i++ {
-		tree.sstableTree[i] = make([]*SSTableInterface, 0)
+		tree.sstableArrays[i] = make([]*SSTableInterface, 0)
 	}
 	tree.maxDepth = conf.LSMTreeMaxDepth
 	tree.compressionOn = conf.CompressionOn
@@ -57,6 +57,8 @@ func mergeSSTables(maxSSTableElem uint32, sstableArray []*SSTableInterface) []*S
 	var indexes []int = make([]int, sstableCount)
 
 	var records []tempRecord = make([]tempRecord, sstableCount)
+
+	const EMPTY_KEY string = ""
 
 	var updateRecordIterators func() = func() {
 		for i := 0; i < sstableCount; i++ {
@@ -76,10 +78,10 @@ func mergeSSTables(maxSSTableElem uint32, sstableArray []*SSTableInterface) []*S
 	//Get the smallest key of the keys at the current iterators of the sstables
 	var getMinKey func() string = func() string {
 		var keys []string = getKeys()
-		var minimum string = ""
+		var minimum string = EMPTY_KEY
 
 		for i := 0; i < sstableCount; i++ {
-			if keys[i] != "" && (keys[i] < minimum || minimum == "") {
+			if keys[i] != EMPTY_KEY && (keys[i] < minimum || minimum == EMPTY_KEY) {
 				minimum = keys[i]
 			}
 		}
@@ -138,7 +140,7 @@ func mergeSSTables(maxSSTableElem uint32, sstableArray []*SSTableInterface) []*S
 	for {
 		updateRecordIterators()
 		var minKey string = getMinKey()
-		if minKey == "" {
+		if minKey == EMPTY_KEY {
 			break
 		}
 
@@ -164,27 +166,57 @@ func mergeSSTables(maxSSTableElem uint32, sstableArray []*SSTableInterface) []*S
 	return newSSTables
 }
 
-func (tree *LSMTree) sizeTieredCompaction(levelIndex uint32) {
+func (tree *LSMTree) leveledCompaction(levelIndex uint32) {
+	//All tables on the passed level need to be compacted with the tables on the next level
 	var toMerge []*SSTableInterface = make([]*SSTableInterface, 0)
-	for i := 0; i < len(tree.sstableTree[levelIndex]); i++ {
-		toMerge = append(toMerge, tree.sstableTree[levelIndex][i])
+	for i := 0; i < len(tree.sstableArrays[levelIndex]); i++ {
+		toMerge = append(toMerge, tree.sstableArrays[levelIndex][i])
+	}
+	for i := 0; i < len(tree.sstableArrays[levelIndex+1]); i++ {
+		toMerge = append(toMerge, tree.sstableArrays[levelIndex+1][i])
 	}
 
+	//Merge them into new SSTables
+	//TODO: MAGIC NUMBER
+	const sstableElements uint32 = 32
+	var merged []*SSTableInterface = mergeSSTables(sstableElements, toMerge)
+
+	//Delete old sstables
+	for i := 0; i < len(tree.sstableArrays[levelIndex]); i++ {
+		tree.sstableArrays[levelIndex][i].Delete()
+	}
+	for i := 0; i < len(tree.sstableArrays[levelIndex+1]); i++ {
+		tree.sstableArrays[levelIndex+1][i].Delete()
+	}
+
+	clear(tree.sstableArrays[levelIndex])
+	tree.sstableArrays[levelIndex] = tree.sstableArrays[levelIndex][:0]
+	tree.sstableArrays[levelIndex+1] = merged
+}
+
+func (tree *LSMTree) sizeTieredCompaction(levelIndex uint32) {
+	//Set all sstables on the passed level to be compacted
+	var toMerge []*SSTableInterface = make([]*SSTableInterface, 0)
+	for i := 0; i < len(tree.sstableArrays[levelIndex]); i++ {
+		toMerge = append(toMerge, tree.sstableArrays[levelIndex][i])
+	}
+
+	//Merge all sstables into a single new sstable
 	var merged []*SSTableInterface = mergeSSTables(0, toMerge)
 	//Delete old sstables
-	for i := 0; i < len(tree.sstableTree[levelIndex]); i++ {
-		tree.sstableTree[levelIndex][i].Delete()
+	for i := 0; i < len(tree.sstableArrays[levelIndex]); i++ {
+		tree.sstableArrays[levelIndex][i].Delete()
 	}
-	//Make a new empty array
-	clear(tree.sstableTree[levelIndex])
-	tree.sstableTree[levelIndex] = tree.sstableTree[levelIndex][:0]
+	//Empty out the array for the compacted level
+	clear(tree.sstableArrays[levelIndex])
+	tree.sstableArrays[levelIndex] = tree.sstableArrays[levelIndex][:0]
 
-	tree.sstableTree[levelIndex] = append(tree.sstableTree[levelIndex], merged[0])
+	tree.sstableArrays[levelIndex+1] = append(tree.sstableArrays[levelIndex+1], merged[0])
 }
 
 func (tree *LSMTree) compact(levelIndex uint32) {
 	if tree.compressionType == "LEVELED" {
-
+		tree.leveledCompaction(levelIndex)
 	} else {
 		tree.sizeTieredCompaction(levelIndex)
 	}
@@ -204,21 +236,23 @@ func (tree *LSMTree) getCapacityOfLevel(levelIndex uint32) uint32 {
 	if tree.compressionType == "leveled" {
 		return uintPow(5, levelIndex+1)
 	}
+	//TODO: MAGIC NUMBER
 	return 5
 }
 
 func (tree *LSMTree) checkLevel(levelIndex uint32) {
+	//No compaction on last level
 	if levelIndex+1 >= tree.maxDepth {
 		return
 	}
 
-	if len(tree.sstableTree[levelIndex]) >= int(tree.getCapacityOfLevel(levelIndex)) {
+	if len(tree.sstableArrays[levelIndex]) >= int(tree.getCapacityOfLevel(levelIndex)) {
 		tree.compact(levelIndex)
 		tree.checkLevel(levelIndex + 1)
 	}
 }
 
 func (tree *LSMTree) AddSSTable(sstable *SSTableInterface) {
-	tree.sstableTree[0] = append(tree.sstableTree[0], sstable)
+	tree.sstableArrays[0] = append(tree.sstableArrays[0], sstable)
 	tree.checkLevel(0)
 }
