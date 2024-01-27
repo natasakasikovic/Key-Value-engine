@@ -1,7 +1,6 @@
 package memtable
 
 import (
-	"fmt"
 	"sort"
 
 	"github.com/natasakasikovic/Key-Value-engine/src/model"
@@ -28,7 +27,7 @@ var Memtables = struct {
 type Memtable struct {
 	data     DataStructure
 	capacity uint64
-	keys     []string
+	Keys     []string
 }
 
 func NewMemtable(data DataStructure, capacity uint64) *Memtable {
@@ -66,14 +65,29 @@ func InitMemtables(memtable_size uint64, memtable_structure string, num_of_insta
 
 }
 
-func Delete(key string) {
-	Memtables.collection[Memtables.current].data.Delete(key)
+func (memtable *Memtable) delete(key string) {
+	memtable.data.Delete(key)
 }
 
 func Get(key string) (model.MemtableRecord, error) {
 	return Memtables.collection[Memtables.current].data.Find(key)
 }
-func Put(key string, value []byte, timestamp uint64) {
+
+func FindAndDelete(key string) bool {
+	for _, memtable := range Memtables.collection {
+		_, err := memtable.data.Find(key)
+		if err == nil {
+			memtable.delete(key)
+			return true
+		}
+	}
+	return false
+}
+
+func Put(key string, value []byte, timestamp uint64, tombstone byte) {
+	if tombstone == 1 && FindAndDelete(key) {
+		return
+	}
 
 	memtable := Memtables.collection[Memtables.current] //current memtable
 
@@ -90,7 +104,7 @@ func Put(key string, value []byte, timestamp uint64) {
 				Memtables.flush += 1
 			}
 			memtable.data.ClearData()
-			memtable.keys = nil
+			memtable.Keys = nil
 		} else {
 			Memtables.current += 1
 			memtable = Memtables.collection[Memtables.current]
@@ -102,30 +116,29 @@ func Put(key string, value []byte, timestamp uint64) {
 					Memtables.flush += 1
 				}
 				memtable.data.ClearData()
-				memtable.keys = nil
+				memtable.Keys = nil
 			}
 		}
 
 	}
 	memValue := model.MemtableRecord{
 		Value:     value,
-		Tombstone: 0,
+		Tombstone: tombstone,
 		Timestamp: timestamp,
 	}
 	//put data to memtable
 	memtable.data.Insert(key, memValue)
-	memtable.keys = append(memtable.keys, key)
+	memtable.Keys = append(memtable.Keys, key)
 
 }
 func (memtable *Memtable) FlushToSSTable() {
 	var records []*model.MemtableRecord
-	sort.Strings(memtable.keys)
-	for _, key := range memtable.keys {
-		fmt.Println(key)
+	sort.Strings(memtable.Keys)
+	for _, key := range memtable.Keys {
 		record, err := Get(key)
 		if err == nil {
 			records = append(records, &record)
 		}
 	}
-	// CreateSStable(records,singleFile, compressionOn, indexDegree, summaryDegree)
+	// CreateSStable(records,singleFile, compressionOn, indexDegree, summaryDegree) //uncomment this line and call CreateSStable when merge sstable branch to develop
 }
