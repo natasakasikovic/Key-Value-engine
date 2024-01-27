@@ -80,10 +80,10 @@ func Put(key string, value []byte, timestamp uint64) {
 	if memtable.data.IsFull(memtable.capacity) {
 		if Memtables.current == Memtables.size-1 { //if current memtable is full and is last
 			//do flush
+			Memtables.current = Memtables.flush
 			Memtables.collection[Memtables.flush].FlushToSSTable()
 			//empty memtable
 			memtable = Memtables.collection[Memtables.flush]
-			Memtables.current = Memtables.flush
 			if Memtables.flush == Memtables.size-1 { //when flushed memtable is last in collection, next for flush is memtable at position 0
 				Memtables.flush = 0
 			} else {
@@ -94,6 +94,16 @@ func Put(key string, value []byte, timestamp uint64) {
 		} else {
 			Memtables.current += 1
 			memtable = Memtables.collection[Memtables.current]
+			if memtable.data.IsFull(memtable.capacity) { //If there is data, flush it; we don't want to overwrite it
+				memtable.FlushToSSTable()
+				if Memtables.flush == Memtables.size-1 { //when flushed memtable is last in collection, next for flush is memtable at position 0
+					Memtables.flush = 0
+				} else {
+					Memtables.flush += 1
+				}
+				memtable.data.ClearData()
+				memtable.keys = nil
+			}
 		}
 
 	}
@@ -108,11 +118,14 @@ func Put(key string, value []byte, timestamp uint64) {
 
 }
 func (memtable *Memtable) FlushToSSTable() {
-	// sstableData := NewSSTable()	//uncomment this line once the SSTable is implemented
+	var records []*model.MemtableRecord
 	sort.Strings(memtable.keys)
 	for _, key := range memtable.keys {
 		fmt.Println(key)
-		// sstableData.Put(memtable.Get(key))	//uncomment this line once the SSTable is implemented
+		record, err := Get(key)
+		if err == nil {
+			records = append(records, &record)
+		}
 	}
-
+	// CreateSStable(records,singleFile, compressionOn, indexDegree, summaryDegree)
 }
