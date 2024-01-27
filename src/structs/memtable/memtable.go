@@ -5,6 +5,8 @@ import (
 	"sort"
 
 	"github.com/natasakasikovic/Key-Value-engine/src/model"
+	bTree "github.com/natasakasikovic/Key-Value-engine/src/structs/B-Tree"
+	hashMap "github.com/natasakasikovic/Key-Value-engine/src/structs/hashMap"
 	skiplist "github.com/natasakasikovic/Key-Value-engine/src/structs/skipList"
 )
 
@@ -39,7 +41,7 @@ func NewMemtable(data DataStructure, capacity uint64) *Memtable {
 		capacity: capacity,
 	}
 }
-func InitMemtables(memtable_size uint64, memtable_structure string, num_of_instances uint64) {
+func InitMemtables(memtable_size uint64, memtable_structure string, num_of_instances uint64, b_tree_order uint32) {
 	Memtables.collection = make([]*Memtable, num_of_instances)
 	Memtables.size = uint(num_of_instances)
 
@@ -50,11 +52,15 @@ func InitMemtables(memtable_size uint64, memtable_structure string, num_of_insta
 		}
 	case "bTree":
 		for i := 0; i < int(num_of_instances); i++ {
-			// Memtables.collection[i] = NewMemtable(bTree.NewSkipList(), memtable_size) //commented out until B-Tree is modified
+			Memtables.collection[i] = NewMemtable(bTree.NewBTree(int(b_tree_order)), memtable_size)
+		}
+	case "hashMap":
+		for i := 0; i < int(num_of_instances); i++ {
+			Memtables.collection[i] = NewMemtable(hashMap.NewHashMap(), memtable_size)
 		}
 	default:
 		for i := 0; i < int(num_of_instances); i++ {
-			Memtables.collection[i] = NewMemtable(skiplist.NewSkipList(), memtable_size)
+			Memtables.collection[i] = NewMemtable(hashMap.NewHashMap(), memtable_size)
 		}
 	}
 
