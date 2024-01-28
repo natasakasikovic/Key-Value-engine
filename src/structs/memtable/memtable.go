@@ -1,6 +1,7 @@
 package memtable
 
 import (
+	"errors"
 	"sort"
 
 	"github.com/natasakasikovic/Key-Value-engine/src/model"
@@ -69,11 +70,11 @@ func (memtable *Memtable) delete(key string) {
 	memtable.data.Delete(key)
 }
 
-func Get(key string) (model.MemtableRecord, error) {
+func find(key string) (model.MemtableRecord, error) {
 	return Memtables.collection[Memtables.current].data.Find(key)
 }
 
-func FindAndDelete(key string) bool {
+func findAndDelete(key string) bool {
 	for _, memtable := range Memtables.collection {
 		_, err := memtable.data.Find(key)
 		if err == nil {
@@ -85,7 +86,7 @@ func FindAndDelete(key string) bool {
 }
 
 func Put(key string, value []byte, timestamp uint64, tombstone byte) {
-	if tombstone == 1 && FindAndDelete(key) {
+	if tombstone == 1 && findAndDelete(key) {
 		return
 	}
 
@@ -95,7 +96,7 @@ func Put(key string, value []byte, timestamp uint64, tombstone byte) {
 		if Memtables.current == Memtables.size-1 { //if current memtable is full and is last
 			//do flush
 			Memtables.current = Memtables.flush
-			Memtables.collection[Memtables.flush].FlushToSSTable()
+			Memtables.collection[Memtables.flush].flushToSSTable()
 			//empty memtable
 			memtable = Memtables.collection[Memtables.flush]
 			if Memtables.flush == Memtables.size-1 { //when flushed memtable is last in collection, next for flush is memtable at position 0
@@ -109,7 +110,7 @@ func Put(key string, value []byte, timestamp uint64, tombstone byte) {
 			Memtables.current += 1
 			memtable = Memtables.collection[Memtables.current]
 			if memtable.data.IsFull(memtable.capacity) { //If there is data, flush it; we don't want to overwrite it
-				memtable.FlushToSSTable()
+				memtable.flushToSSTable()
 				if Memtables.flush == Memtables.size-1 { //when flushed memtable is last in collection, next for flush is memtable at position 0
 					Memtables.flush = 0
 				} else {
@@ -131,11 +132,22 @@ func Put(key string, value []byte, timestamp uint64, tombstone byte) {
 	memtable.Keys = append(memtable.Keys, key)
 
 }
-func (memtable *Memtable) FlushToSSTable() {
+
+func Get(key string) (model.MemtableRecord, error) {
+	for _, memtable := range Memtables.collection {
+		record, err := memtable.data.Find(key)
+		if err == nil {
+			return record, nil
+		}
+	}
+	return model.MemtableRecord{}, errors.New("record not found")
+}
+
+func (memtable *Memtable) flushToSSTable() {
 	var records []*model.MemtableRecord
 	sort.Strings(memtable.Keys)
 	for _, key := range memtable.Keys {
-		record, err := Get(key)
+		record, err := find(key)
 		if err == nil {
 			records = append(records, &record)
 		}

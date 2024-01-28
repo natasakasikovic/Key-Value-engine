@@ -49,6 +49,12 @@ func NewRecord(tombstone byte, key string, value []byte) *Record {
 	crcCheck := append([]byte(key), value...)
 	return &Record{crc: CRC32(crcCheck), timestamp: uint64(time.Now().UnixNano()), tombstone: tombstone, keySize: uint64(len(key)), valueSize: uint64(len(value)), key: key, value: value}
 }
+
+func NewRecordTimestamp(tombstone byte, key string, value []byte, timestamp uint64) *Record {
+	crcCheck := append([]byte(key), value...)
+	return &Record{crc: CRC32(crcCheck), timestamp: timestamp, tombstone: tombstone, keySize: uint64(len(key)), valueSize: uint64(len(value)), key: key, value: value}
+}
+
 func (r *Record) GetRecordLength() uint64 {
 	return 4 + 8 + 1 + 8 + 8 + r.keySize + r.valueSize
 }
