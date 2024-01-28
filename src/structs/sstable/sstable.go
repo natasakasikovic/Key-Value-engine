@@ -1,9 +1,6 @@
 package sstable
 
 import (
-	"bytes"
-	"encoding/binary"
-	"errors"
 	"fmt"
 	"os"
 
@@ -21,14 +18,11 @@ const (
 )
 
 type SSTable struct {
-	data           *os.File
-	index          *os.File
-	summary        *os.File
-	compresionInfo *os.File
-	bf             *bloomFilter.BloomFilter
-	merkle         *merkletree.MerkleTree
-	minKey         string
-	maxKey         string
+	data, index, summary                                           *os.File
+	bf                                                             *bloomFilter.BloomFilter
+	merkle                                                         *merkletree.MerkleTree
+	minKey, maxKey                                                 string
+	dataOffset, indexOffset, summaryOffset, merkleOffset, bfOffset int64
 }
 
 // function that creates a new sstable
@@ -79,202 +73,62 @@ func CreateSStable(records []*model.Record, singleFile, compressionOn bool, inde
 	if err != nil {
 		return nil, err
 	}
-
 	return &sstable, nil
 }
 
-// params: n - index degree, m - summary degree
-// makes sstable which is in single file, all *os.File in struct refer to same file
-// this function also returns error if it occured during actions connected to files
-func (sstable *SSTable) makeSingleFile(path string, records []*model.Record, n int, m int) error {
-	file, err := makeFile(path, "DataIndexSummary")
-	if err != nil {
-		return err
-	}
-	sstable.index, sstable.data, sstable.summary = file, file, file
-	sstable.writeToSingleFile(records, n, m)
-	return nil
-}
+// returns nil as first param if record is not found
+// second param returns error if it occured during actions connected to files, otherwise returns nil
+func Search(key string) (*model.Record, error) {
 
-// function that calls every serialization
-// saves header one after the other -> length of min key, so we know how we need to read to get min key
-// same things is done for max key, then we saved offsets for data, index and summary
-
-func (sstable *SSTable) writeToSingleFile(records []*model.Record, n int, m int) {
-	var content [][]byte
-
-	minKeyBytes := []byte(sstable.minKey)
-	maxKeyBytes := []byte(sstable.maxKey)
-
-	var minKeyLength uint64 = uint64(len(minKeyBytes))
-	var maxKeyLength uint64 = uint64(len(maxKeyBytes))
-	var bfOffset uint64 = 6*8 + minKeyLength + maxKeyLength
-	var contentBf [][]byte = [][]byte{sstable.bf.Serialize()}
-	var dataOffset uint64 = calculateOffset(contentBf, bfOffset)
-	var contentData [][]byte = sstable.serializeData(records)
-	var indexOffset uint64 = calculateOffset(contentData, dataOffset)
-	var contentIndex [][]byte = sstable.serializeIndexSummary(contentData, n)
-	var summaryOffset uint64 = calculateOffset(contentIndex, indexOffset)
-	var contentSummary [][]byte = sstable.serializeIndexSummary(contentIndex, m)
-
-	content = append(content, uint64ToBytes(minKeyLength))
-	content = append(content, minKeyBytes)
-	content = append(content, uint64ToBytes(maxKeyLength))
-	content = append(content, maxKeyBytes)
-	content = append(content, uint64ToBytes(bfOffset), uint64ToBytes(dataOffset), uint64ToBytes(indexOffset), uint64ToBytes(summaryOffset))
-	content = append(content, contentBf...)
-	content = append(content, contentData...)
-	content = append(content, contentIndex...)
-	content = append(content, contentSummary...)
-
-	sstable.writeToFile(sstable.data, content)
-
-}
-
-// makes separate files: data, summary, index;
-// param path: path to the folder where files will be saved;
-// param records: array of pointers to records from memtable;
-// param n: index degree;
-// param m: summary degree;
-// returns error: if it occured during actions connected to files;
-func (sstable *SSTable) makeSeparateFiles(path string, records []*model.Record, n int, m int) error {
-
-	data, _ := makeFile(path, "Data")
-	summary, _ := makeFile(path, "Summary")
-	index, _ := makeFile(path, "Index")
-	filter, _ := makeFile(path, "Filter")
-	compressionInfo, _ := makeFile(path, "CompressionInfo") // TODO: write information about compression
-	if data != nil && index != nil && summary != nil && compressionInfo != nil {
-		sstable.data = data
-		sstable.index = index
-		sstable.summary = summary
-
-		minKeyBytes := []byte(sstable.minKey)
-		maxKeyBytes := []byte(sstable.maxKey)
-
-		var minKeyLength uint64 = uint64(len(minKeyBytes))
-		var maxKeyLength uint64 = uint64(len(maxKeyBytes))
-
-		maxKeyInfo := append(uint64ToBytes(maxKeyLength), maxKeyBytes...)
-		minKeyInfo := append(uint64ToBytes(minKeyLength), minKeyBytes...)
-
-		minKeyInfoSerialized := append(uint64ToBytes(minKeyLength), minKeyBytes...)
-		maxKeyInfoSerialized := append(uint64ToBytes(maxKeyLength), maxKeyBytes...)
-
-		var contentSummary [][]byte = [][]byte{minKeyInfoSerialized, maxKeyInfoSerialized}
-
-		var contentData [][]byte = sstable.serializeData(records)
-		var contentIndex [][]byte = sstable.serializeIndexSummary(contentData, n)
-		contentSummary = append(contentSummary, sstable.serializeIndexSummary(contentIndex, m)...)
-		contentSummary = append(contentSummary, minKeyInfo, maxKeyInfo)
-
-		var contentBf [][]byte = [][]byte{sstable.bf.Serialize()}
-
-		sstable.writeToFile(data, contentData)
-		sstable.writeToFile(index, contentIndex)
-		sstable.writeToFile(summary, contentSummary)
-		sstable.writeToFile(filter, contentBf)
-		return nil
-	}
-	return errors.New("error occured")
-}
-
-func (sstable *SSTable) serializeIndexSummary(content [][]byte, n int) [][]byte {
-	var retVal [][]byte
-	var offset int = 0
-	for i := 0; i < len(content); i++ {
-		offset += len(content[i])
-		if i%n == 0 {
-			keySize, key := getKey(content[i])
-			var buffer bytes.Buffer
-			binary.Write(&buffer, binary.BigEndian, keySize)
-			binary.Write(&buffer, binary.BigEndian, key)
-			binary.Write(&buffer, binary.BigEndian, offset)
-			retVal = append(retVal, buffer.Bytes())
-		}
-	}
-	return retVal
-}
-
-func getKey(item []byte) (uint64, string) {
-	var keySize uint64
-	buffer := bytes.NewReader(item)
-	binary.Read(buffer, binary.BigEndian, keySize)
-	keyBytes := make([]byte, keySize)
-	buffer.Read(keyBytes)
-	return keySize, string(keyBytes)
-}
-
-// helper used in previous function
-func uint64ToBytes(value uint64) []byte {
-	buffer := make([]byte, 8)
-	binary.BigEndian.PutUint64(buffer, value)
-	return buffer
-}
-
-// this functions calculates lenght of bytes for forwarded content and returns it
-func calculateOffset(content [][]byte, offset uint64) uint64 {
-	for i := 0; i < len(content); i++ {
-		offset += uint64(len(content[i]))
-	}
-	return uint64(offset)
-}
-
-// (helper) serializes records - turns them to [][]byte
-func (sstable *SSTable) serializeData(records []*model.Record) [][]byte {
-	var content [][]byte
-	for _, record := range records {
-		content = append(content, record.ToBytes())
-	}
-	return content
-}
-
-// writes serialized content to file
-func (sstable *SSTable) writeToFile(file *os.File, arr [][]byte) {
-	var content []byte
-	for i := 0; i < len(arr); i++ {
-		content = append(content, arr[i]...)
-	}
-	file.Write(content)
-	defer file.Close()
-}
-
-func Search(key string) error {
-	dirContent, err := utils.GetDirContent(PATH)
-	if err != nil {
-		return err
-	}
-	for i := 0; i < len(dirContent); i++ { // search through all sstables
-		var dirName string = dirContent[i]
-		content, err := utils.GetDirContent(fmt.Sprintf("%s/%s", PATH, dirName)) // get content of sstable, so we can check if sstable is in single file or in seperate files
-
-		if err != nil {
-			return err
-		}
-
-		if len(content) == 1 {
-			ReadSStableSingleFile()
-		} else {
-			// ReadSSTableSeparateFiles()
-		}
-	}
-	// TODO: check len of dir
-	// Accoring to len of dir call different methods
-	// In that methods read sstable and set it
-	// then come back to this method and do search which is same for both
-	return nil
-}
-
-func ReadSStableSingleFile() {
-	//TODO: implement logic for reading sstable ehich is in single file
-}
-
-// helper - makes files necessary for one sstable
-// used in function makeSeparateFiles and makeSingleFile
-func makeFile(path string, s string) (*os.File, error) {
-	file, err := os.OpenFile(fmt.Sprintf("%s/%s%s.db", path, FILE_NAME, s), os.O_RDWR|os.O_CREATE, 0644)
+	dirContent, err := utils.GetDirContent(PATH) // dirContent - names of all sstables dirs
 	if err != nil {
 		return nil, err
 	}
-	return file, nil
+
+	for i := 0; i < len(dirContent); i++ { // search through all sstables
+		var dirName string = dirContent[i] // one sstable
+
+		path := fmt.Sprintf("%s/%s", PATH, dirName)
+		content, err := utils.GetDirContent(path) // get content of sstable, so we can check if sstable is in single file or in seperate files
+		if err != nil {
+			return nil, err
+		}
+
+		var sstable *SSTable
+
+		if len(content) == 1 {
+			sstable, err = LoadSStableSingle(path)
+		} else {
+			sstable, err = LoadSSTableSeparate(path)
+		}
+		if err != nil {
+			return nil, err
+		}
+
+		sstable.loadBF(len(content) != 1, dirName)
+		if !sstable.bf.Find(key) { // then record is not in this sstable, go to next
+			continue
+		}
+		if key < sstable.minKey || key > sstable.maxKey {
+			continue
+		}
+
+		var data []byte
+		data, err = sstable.loadSummary(len(content) != 1)
+		if err != nil {
+			return nil, err
+		}
+
+		offset1, offset2 := sstable.searchSummary(data, key)
+
+		data, err = sstable.loadIndex(len(content) != 1, int(offset1), int(offset2)) // TODO: myd to recieve uint64?
+		if err != nil {
+			return nil, err
+		}
+
+		offset1, offset2 = sstable.searchIndex(data, key)
+		record := sstable.searchData(len(content) != 1, int(offset1), int(offset2), key)
+		return record, nil
+	}
+	return nil, nil
 }

@@ -7,6 +7,8 @@ import (
 	"strings"
 )
 
+// returns list of strings which represents name of content
+// used in sstable and wal
 func GetDirContent(path string) ([]string, error) {
 	dirs, err := os.ReadDir(path)
 
@@ -40,4 +42,12 @@ func GetNextContentName(contentName []string, path string, s string) ([]string, 
 	contentName = append(contentName, fileName)
 
 	return contentName, path, nil
+}
+
+func GetFileLength(f *os.File) (int64, error) {
+	fi, err := f.Stat()
+	if err != nil {
+		return 0, err
+	}
+	return fi.Size(), nil
 }
