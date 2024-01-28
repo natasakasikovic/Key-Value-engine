@@ -32,7 +32,7 @@ func (r *Record) ToBytes() []byte {
 	return buffer.Bytes()
 }
 
-func FromBytes(data []byte) (Record, error) {
+func FromBytes(data []byte) (Record, uint64, error) {
 	var record Record
 	buffer := bytes.NewReader(data)
 
@@ -43,22 +43,20 @@ func FromBytes(data []byte) (Record, error) {
 
 	binary.Read(buffer, binary.BigEndian, &record.Crc)
 	binary.Read(buffer, binary.BigEndian, &record.Timestamp)
-	tombstone, err := buffer.ReadByte()
-	if err != nil {
-		return record, err
-	}
-	record.Tombstone = tombstone
+	binary.Read(buffer, binary.BigEndian, &record.Tombstone)
 
+	read := 8 + record.KeySize + 1 + 8 + 4
 	if record.Tombstone != 1 {
 		binary.Read(buffer, binary.BigEndian, &record.ValueSize)
 		valueBytes := make([]byte, record.ValueSize)
 		buffer.Read(valueBytes)
 		record.Value = valueBytes
+		read += (8 + record.ValueSize)
 
 	} else {
 		record.ValueSize = 0
 		record.Value = []byte{}
 	}
 
-	return record, nil
+	return record, read, nil
 }

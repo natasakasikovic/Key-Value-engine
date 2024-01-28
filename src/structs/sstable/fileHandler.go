@@ -65,6 +65,69 @@ func LoadSStableSingle(p string) (*SSTable, error) {
 	return sstable, nil
 }
 
+// returns pointer to SSTable if succesfuly created, otherwise returns an error
+func LoadSSTableSeparate(path string) (*SSTable, error) {
+
+	sstable := &SSTable{}
+	path = fmt.Sprintf("%s/%s", path, FILE_NAME)
+
+	// set summary file
+	summaryFile, err := os.Open(fmt.Sprintf("%s%s", path, "Summary.db"))
+	if err != nil {
+		return nil, err
+	}
+	sstable.summary = summaryFile
+
+	// set min key
+	var minKeyLength int64
+	err = binary.Read(summaryFile, binary.BigEndian, &minKeyLength)
+	if err != nil {
+		return nil, err
+	}
+
+	minKeyBytes := make([]byte, minKeyLength)
+	_, err = summaryFile.Read(minKeyBytes)
+	if err != nil {
+		return nil, err
+	}
+
+	sstable.minKey = string(minKeyBytes)
+
+	//set max key
+	var maxKeyLength int64
+	err = binary.Read(summaryFile, binary.BigEndian, &maxKeyLength)
+	if err != nil {
+		return nil, err
+	}
+
+	maxKeyBytes := make([]byte, maxKeyLength)
+	_, err = summaryFile.Read(maxKeyBytes)
+	if err != nil {
+		return nil, err
+	}
+
+	sstable.maxKey = string(maxKeyBytes)
+
+	// set index file
+	indexFile, err := os.Open(fmt.Sprintf("%s%s", path, "Index.db"))
+	if err != nil {
+		return nil, err
+	}
+	sstable.index = indexFile
+
+	// set data file
+	dataFile, err := os.Open(fmt.Sprintf("%s%s", path, "Data.db"))
+	if err != nil {
+		return nil, err
+	}
+	sstable.data = dataFile
+
+	sstable.bfOffset, sstable.dataOffset, sstable.indexOffset, sstable.merkleOffset = 0, 0, 0, 0
+	sstable.summaryOffset = 2*8 + minKeyLength + maxKeyLength
+
+	return sstable, nil
+}
+
 // makes separate files: data, summary, index;
 // param path: path to the folder where files will be saved;
 // param records: array of pointers to records from memtable;

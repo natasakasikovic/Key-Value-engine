@@ -3,6 +3,9 @@ package sstable
 import (
 	"bytes"
 	"encoding/binary"
+	"io"
+
+	"github.com/natasakasikovic/Key-Value-engine/src/utils"
 )
 
 func (sstable *SSTable) searchIndex(data []byte, key string) (uint64, uint64) {
@@ -44,4 +47,39 @@ func (sstable *SSTable) serializeIndexSummary(content [][]byte, n int) [][]byte 
 
 	}
 	return retVal
+}
+
+// loads from index file, if offset2 is 0 then read until EOF
+// returns bytes read if succesfuly read else returns an error
+func (sstable *SSTable) loadIndex(separateFile bool, offset1 int, offset2 int) ([]byte, error) {
+
+	var data []byte
+	var size int
+
+	if separateFile {
+		_, err := sstable.index.Seek(int64(offset1), 0)
+		if err != nil {
+			return nil, err
+		}
+		if offset2 == 0 { // read until EOF
+			fileSize, err := utils.GetFileLength(sstable.index)
+			if err != nil {
+				return nil, err
+			}
+			size = int(fileSize) - offset1
+		} else { // read between offsets
+			size = offset2 - offset1
+		}
+
+		data = make([]byte, size)
+
+		_, err = io.ReadAtLeast(sstable.index, data, size)
+		if err != nil {
+			return nil, err
+		}
+	} else {
+		// TODO: implement logic for single file
+	}
+
+	return data, nil
 }
