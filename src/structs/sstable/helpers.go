@@ -32,10 +32,10 @@ func uint64ToBytes(value uint64) []byte {
 // reads block in summary/index
 // returns key, offset in index/data, number of bytes from content that are read
 func readBlock(content []byte) (string, uint64, int) {
+
 	if len(content) == 0 {
 		return "", 0, 0
 	}
-
 	var keySize uint64
 	binary.Read(bytes.NewReader(content[:8]), binary.BigEndian, &keySize)
 

@@ -1,8 +1,6 @@
 package sstable
 
 import (
-	"io"
-
 	"github.com/natasakasikovic/Key-Value-engine/src/model"
 )
 
@@ -15,49 +13,31 @@ func (sstable *SSTable) serializeData(records []*model.Record) [][]byte {
 	return content
 }
 
-// return a pointer to record if found, otherwise returns nil
-func (sstable *SSTable) searchData(isSeparate bool, offset1 int, offset2 int, key string) *model.Record {
+// returns a pointer to record if found, otherwise returns nil
+func (sstable *SSTable) searchData(isSeparate bool, offset1 int, offset2 int, key string) (*model.Record, error) {
 	var data []byte
 	var err error
 
 	if isSeparate {
-		if offset2 == 0 {
-			sstable.data.Seek(int64(offset1), 0)
-			data, err = io.ReadAll(sstable.data)
-		} else {
-			offset := int(offset2 - offset1)
-			data = make([]byte, offset)
-			sstable.data.Seek(int64(offset1), 0)
-			_, err = io.ReadAtLeast(sstable.data, data, offset)
-			if err != nil {
-				return nil
-			}
-		}
-
-	} else { // if it is not in separate
-		var toReadLength int
-		sstable.data.Seek(sstable.dataOffset+int64(offset1), 0)
-		if offset2 == 0 {
-			toReadLength = int(sstable.indexOffset - sstable.dataOffset - int64(offset1))
-		} else {
-			toReadLength = offset2 - offset1
-		}
-		data = make([]byte, toReadLength)
-		_, err = io.ReadAtLeast(sstable.data, data, toReadLength)
-		if err != nil {
-			return nil
-		}
+		data, err = sstable.loadDataSeparate(offset2, offset1)
+	} else {
+		data, err = sstable.loadDataSingle(offset2, offset1)
 	}
 
-	for len(data) > 0 {
-		record, read, err := model.FromBytes(data)
+	if err != nil {
+		return nil, err
+	}
+
+	for len(data) > 0 { // read records until you have data
+		record, readBytes, err := model.FromBytes(data)
 		if err != nil {
-			return nil
+			return nil, err
 		}
 		if record.Key == key {
-			return &record
+			return &record, nil
 		}
-		data = data[read:]
+		data = data[readBytes:]
 	}
-	return nil
+
+	return nil, nil
 }

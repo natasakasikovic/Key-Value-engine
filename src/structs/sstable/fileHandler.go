@@ -9,7 +9,118 @@ import (
 
 	"github.com/natasakasikovic/Key-Value-engine/src/model"
 	"github.com/natasakasikovic/Key-Value-engine/src/structs/bloomFilter"
+	"github.com/natasakasikovic/Key-Value-engine/src/structs/merkletree"
+	"github.com/natasakasikovic/Key-Value-engine/src/utils"
 )
+
+// loads from index file, if offset2 is 0 then read until EOF
+// returns bytes read if succesfuly read else returns an error
+func (sstable *SSTable) loadIndex(separateFile bool, offset1 int, offset2 int) ([]byte, error) {
+
+	var data []byte
+	var size int
+	var err error
+
+	if separateFile {
+		data, size, err = sstable.loadIndexSeparate(offset1, offset2)
+	} else {
+		data, size, err = sstable.loadIndexSingle(offset1, offset2)
+	}
+
+	if err != nil {
+		return nil, err
+	}
+
+	toAppend, keySize, err := sstable.readNextIndex()
+
+	if err != nil {
+		return nil, err
+	}
+
+	content := make([]byte, 0, 16+keySize+size)
+	content = append(content, data...)
+	content = append(content, toAppend...)
+
+	return content, nil
+}
+
+// This method needs to read field by field in a block because we don't have that part of the file loaded into the operating memory,
+// and we don't have information on how much we need to load.
+func (sstable *SSTable) readNextIndex() ([]byte, int, error) {
+	var err error
+	var data []byte
+
+	var keySizeBytes []byte = make([]byte, 8)
+	_, err = io.ReadAtLeast(sstable.index, keySizeBytes, 8)
+
+	if err != nil {
+		return nil, 0, err
+	}
+
+	keySize := binary.BigEndian.Uint64(keySizeBytes)
+	var bufferKey []byte = make([]byte, keySize)
+	_, err = io.ReadAtLeast(sstable.index, bufferKey, int(keySize))
+
+	if err != nil {
+		return nil, 0, err
+	}
+
+	var offset []byte = make([]byte, 8)
+	_, err = io.ReadAtLeast(sstable.index, offset, 8)
+
+	if err != nil {
+		return nil, 0, err
+	}
+
+	data = append(data, keySizeBytes...)
+	data = append(data, bufferKey...)
+	data = append(data, offset...)
+
+	return data, int(keySize), nil
+}
+
+// returns loaded index from separate file between 2 offsets, size of that loaded index and an error if it occured
+func (sstable *SSTable) loadIndexSeparate(offset1, offset2 int) ([]byte, int, error) {
+	var size int
+	var err error
+
+	if offset2 == 0 { // read until EOF
+		fileSize, err := utils.GetFileLength(sstable.index)
+		if err != nil {
+			return nil, 0, err
+		}
+		size = int(fileSize) - offset1
+	} else { // read between offsets
+		size = offset2 - offset1
+	}
+	data := make([]byte, size)
+	_, err = io.ReadAtLeast(sstable.index, data, size)
+	if err != nil {
+		return nil, 0, err
+	}
+	return data, size, nil
+}
+
+// returns loaded index from single file between 2 offsets, size of that loaded index and an error if it occured
+func (sstable *SSTable) loadIndexSingle(offset1, offset2 int) ([]byte, int, error) {
+	var size int
+
+	_, err := sstable.index.Seek(int64(sstable.indexOffset+int64(offset1)), 0)
+	if err != nil {
+		return nil, 0, err
+	}
+	if offset2 == 0 {
+		size = int(sstable.summaryOffset - sstable.indexOffset - int64(offset1))
+	} else {
+		size = offset2 - offset1
+	}
+	data := make([]byte, size)
+	_, err = io.ReadAtLeast(sstable.index, data, size)
+	if err != nil {
+		return nil, 0, err
+	}
+	return data, size, nil
+}
 
 // returns pointer to SSTable if succesfuly created, otherwise returns an error
 func LoadSStableSingle(p string) (*SSTable, error) {
@@ -21,9 +132,7 @@ func LoadSStableSingle(p string) (*SSTable, error) {
 		return nil, err
 	}
 
-	sstable.index = file
-	sstable.data = file
-	sstable.summary = file
+	sstable.index, sstable.data, sstable.summary = file, file, file
 
 	// set min key
 	var minKeyLength uint64
@@ -129,6 +238,64 @@ func LoadSSTableSeparate(path string) (*SSTable, error) {
 	return sstable, nil
 }
 
+// params: bool singleFile - if we load from single file first read first 8 bytes to check size of bf
+// if it is not single file then read all bytes from file
+func (sstable *SSTable) loadBF(separateFile bool, path string) error {
+	var file *os.File
+	var err error
+	var toRead []byte
+
+	if separateFile {
+		path = fmt.Sprintf("%s/%s/%s%s", PATH, path, FILE_NAME, "Filter.db")
+		file, err = os.Open(path)
+		if err != nil {
+			return err
+		}
+		toRead, err = io.ReadAll(file)
+		if err != nil {
+			return err
+		}
+	} else {
+		file = sstable.data
+		toRead = make([]byte, int(sstable.dataOffset-sstable.bfOffset))
+		file.Seek(sstable.bfOffset, 0)
+		_, err = io.ReadAtLeast(sstable.data, toRead, len(toRead))
+		if err != nil {
+			return err
+		}
+	}
+
+	sstable.bf = bloomFilter.Deserialize(toRead)
+	return nil
+}
+
+// loads summary and returns bytes loaded from file, otherwise returns an error
+func (sstable *SSTable) loadSummary(separateFile bool) ([]byte, error) {
+	var content []byte
+	var err error
+
+	if separateFile {
+		_, err = sstable.summary.Seek(sstable.summaryOffset, 0) // in separate files there are headers written, so seek
+		if err != nil {
+			return nil, err
+		}
+		content, err = io.ReadAll(sstable.summary)
+		if err != nil {
+			return nil, err
+		}
+	} else {
+		var toReadLength int = int(sstable.merkleOffset - sstable.summaryOffset)
+		sstable.summary.Seek(sstable.summaryOffset, 0)
+		data := make([]byte, toReadLength)
+		_, err = io.ReadAtLeast(sstable.summary, data, toReadLength)
+		if err != nil {
+			return nil, err
+		}
+		content = data
+	}
+	return content, nil
+}
+
 // makes separate files: data, summary, index;
 // param path: path to the folder where files will be saved;
 // param records: array of pointers to records from memtable;
@@ -141,7 +308,7 @@ func (sstable *SSTable) makeSeparateFiles(path string, records []*model.Record, 
 	summary, _ := makeFile(path, "Summary")
 	index, _ := makeFile(path, "Index")
 	filter, _ := makeFile(path, "Filter")
-	merkle, _ := makeFile(path, "Merkle")
+	merkle, _ := makeFile(path, "Metadata")
 	if data != nil && index != nil && summary != nil {
 		sstable.data = data
 		sstable.index = index
@@ -250,38 +417,92 @@ func (sstable *SSTable) writeToFile(file *os.File, arr [][]byte) {
 	defer file.Close()
 }
 
-// params: bool singleFile - if we load from single file first read first 8 bytes to check size of bf
-// if it is not single file then read all bytes from file
-func (sstable *SSTable) loadBF(separateFile bool, path string) error {
-	var file *os.File
+// method used in searchData, if sstable is in separate file
+// returns loaded data from separate file between 2 offsets
+func (sstable *SSTable) loadDataSeparate(offset2 int, offset1 int) ([]byte, error) {
+	var err error
+	var data []byte
+
+	if offset2 == 0 {
+		sstable.data.Seek(int64(offset1), 0)
+		data, err = io.ReadAll(sstable.data)
+	} else {
+		offset := int(offset2 - offset1)
+		data = make([]byte, offset)
+		sstable.data.Seek(int64(offset1), 0)
+		_, err = io.ReadAtLeast(sstable.data, data, offset)
+		if err != nil {
+			return nil, err
+		}
+	}
+	return data, nil
+}
+
+// method used in searchData, if sstable is in single file
+// returns loaded data from single file between 2 offsets
+func (sstable *SSTable) loadDataSingle(offset2 int, offset1 int) ([]byte, error) {
+	var toReadLength int
+	var err error
+	var data []byte
+
+	sstable.data.Seek(sstable.dataOffset+int64(offset1), 0)
+	if offset2 == 0 {
+		toReadLength = int(sstable.indexOffset - sstable.dataOffset - int64(offset1))
+	} else {
+		toReadLength = offset2 - offset1
+	}
+	data = make([]byte, toReadLength)
+	_, err = io.ReadAtLeast(sstable.data, data, toReadLength)
+	if err != nil {
+		return nil, err
+	}
+	return data, nil
+}
+
+// method used in compactions - loads all data because we need to compare records
+func (sstable *SSTable) loadData() ([]byte, error) {
+	var data []byte
 	var err error
 
+	if sstable.dataOffset != 0 {
+		data, err = sstable.loadDataSingle(0, 0)
+	} else {
+		data, err = sstable.loadDataSeparate(0, 0)
+	}
+
+	if err != nil {
+		return nil, err
+	}
+
+	return data, nil
+}
+
+func (sstable *SSTable) loadMerkle(separateFile bool, path string) error {
+	var file *os.File
+	var err error
+	var toRead []byte
+
 	if separateFile {
-		path = fmt.Sprintf("%s/%s/%s%s", PATH, path, FILE_NAME, "Filter.db")
+		path = fmt.Sprintf("%s/%s/%s%s", PATH, path, FILE_NAME, "Metadata.db")
 		file, err = os.Open(path)
 		if err != nil {
 			return err
 		}
+		toRead, err = io.ReadAll(file)
 	} else {
 		file = sstable.data
-	}
-
-	var toRead []byte
-	if separateFile {
-		toRead, err = io.ReadAll(file)
+		fileSize, err := utils.GetFileLength(file)
 		if err != nil {
 			return err
 		}
-	} else {
-		toRead = make([]byte, int(sstable.dataOffset-sstable.bfOffset))
-		file.Seek(sstable.bfOffset, 0)
+		toRead = make([]byte, fileSize-sstable.merkleOffset)
+		file.Seek(sstable.merkleOffset, 0)
 		_, err = io.ReadAtLeast(sstable.data, toRead, len(toRead))
 		if err != nil {
-			return err
+			return nil
 		}
-
 	}
 
-	sstable.bf = bloomFilter.Deserialize(toRead)
+	sstable.merkle = merkletree.Deserialize(toRead)
 	return nil
 }
