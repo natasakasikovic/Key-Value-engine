@@ -78,7 +78,20 @@ func (sstable *SSTable) loadIndex(separateFile bool, offset1 int, offset2 int) (
 			return nil, err
 		}
 	} else {
-		// TODO: implement logic for single file
+		_, err := sstable.index.Seek(int64(sstable.indexOffset+int64(offset1)), 0)
+		if err != nil {
+			return nil, err
+		}
+		if offset2 == 0 {
+			size = int(sstable.summaryOffset - sstable.indexOffset - int64(offset1))
+		} else {
+			size = offset2 - offset1
+		}
+		data = make([]byte, size)
+		_, err = io.ReadAtLeast(sstable.index, data, size)
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	return data, nil

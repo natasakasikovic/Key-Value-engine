@@ -34,17 +34,30 @@ func (sstable *SSTable) searchData(isSeparate bool, offset1 int, offset2 int, ke
 			}
 		}
 
-		for len(data) > 0 {
-			record, read, err := model.FromBytes(data)
-			if err != nil {
-				return nil
-			}
-			if record.Key == key {
-				return &record
-			}
-			data = data[read:]
+	} else { // if it is not in separate
+		var toReadLength int
+		sstable.data.Seek(sstable.dataOffset+int64(offset1), 0)
+		if offset2 == 0 {
+			toReadLength = int(sstable.indexOffset - sstable.dataOffset - int64(offset1))
+		} else {
+			toReadLength = offset2 - offset1
+		}
+		data = make([]byte, toReadLength)
+		_, err = io.ReadAtLeast(sstable.data, data, toReadLength)
+		if err != nil {
+			return nil
 		}
 	}
 
+	for len(data) > 0 {
+		record, read, err := model.FromBytes(data)
+		if err != nil {
+			return nil
+		}
+		if record.Key == key {
+			return &record
+		}
+		data = data[read:]
+	}
 	return nil
 }

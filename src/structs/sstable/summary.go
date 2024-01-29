@@ -27,7 +27,6 @@ func (sstable *SSTable) searchSummary(data []byte, key string) (uint64, uint64) 
 	return offset1, offset2 + uint64(bytesRead) // read also next one
 }
 
-// in summary
 // loads summary and returns bytes loaded from file, otherwise returns an error
 func (sstable *SSTable) loadSummary(separateFile bool) ([]byte, error) {
 	var content []byte
@@ -43,10 +42,14 @@ func (sstable *SSTable) loadSummary(separateFile bool) ([]byte, error) {
 			return nil, err
 		}
 	} else {
-		// TODO: check
-		// var toReadLength int = int(sstable.summaryOffset - sstable.bfOffset)
-		// sstable.summary.Seek(sstable.summaryOffset, 0)
-		// _, err = io.ReadAtLeast(sstable.summary, data, toReadLength)
+		var toReadLength int = int(sstable.merkleOffset - sstable.summaryOffset)
+		sstable.summary.Seek(sstable.summaryOffset, 0)
+		data := make([]byte, toReadLength)
+		_, err = io.ReadAtLeast(sstable.summary, data, toReadLength)
+		if err != nil {
+			return nil, err
+		}
+		content = data
 	}
 	return content, nil
 }

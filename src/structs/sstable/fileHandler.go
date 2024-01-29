@@ -59,8 +59,9 @@ func LoadSStableSingle(p string) (*SSTable, error) {
 			return nil, err
 		}
 	}
+
 	sstable.bfOffset, sstable.dataOffset, sstable.indexOffset, sstable.summaryOffset, sstable.merkleOffset =
-		int64(offsets[0]+8), int64(offsets[1]+8), int64(offsets[2]+8), int64(offsets[3]+8), int64(offsets[4]+8)
+		int64(offsets[0]), int64(offsets[1]), int64(offsets[2]), int64(offsets[3]), int64(offsets[4])
 
 	return sstable, nil
 }
@@ -268,10 +269,17 @@ func (sstable *SSTable) loadBF(separateFile bool, path string) error {
 	var toRead []byte
 	if separateFile {
 		toRead, err = io.ReadAll(file)
+		if err != nil {
+			return err
+		}
 	} else {
 		toRead = make([]byte, int(sstable.dataOffset-sstable.bfOffset))
 		file.Seek(sstable.bfOffset, 0)
-		_, err = file.Read(toRead)
+		_, err = io.ReadAtLeast(sstable.data, toRead, len(toRead))
+		if err != nil {
+			return err
+		}
+
 	}
 
 	sstable.bf = bloomFilter.Deserialize(toRead)
