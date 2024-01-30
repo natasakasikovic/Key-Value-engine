@@ -1,9 +1,10 @@
 package bloomFilter
 
 import (
-	"github.com/natasakasikovic/Key-Value-engine/src/structs/hash"
 	"encoding/binary"
 	"math"
+
+	"github.com/natasakasikovic/Key-Value-engine/src/structs/hash"
 )
 
 type BloomFilter struct {
@@ -12,11 +13,11 @@ type BloomFilter struct {
 	hashFunc []hash.HashWithSeed
 }
 
-func NewBf(n int, p float64) BloomFilter {
+func NewBf(n int, p float64) *BloomFilter {
 	m := calculateM(n, p)
 	k := calculateK(n, m)
 
-	return BloomFilter{
+	return &BloomFilter{
 		bitset:   make([]byte, m/8+1),
 		k:        k,
 		m:        m,

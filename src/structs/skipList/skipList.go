@@ -15,7 +15,7 @@ const (
 
 type node struct {
 	key   string
-	val   model.MemtableRecord
+	val   model.Record
 	tower [maxHeight]*node // a collection of forwarded pointers linking the node to subsequent nodes on each corresponding level of the skip list
 }
 
@@ -58,7 +58,7 @@ func (skipList *SkipList) search(key string) (*node, [maxHeight]*node) {
 }
 
 // inserting a new node
-func (skipList *SkipList) Insert(key string, val model.MemtableRecord) {
+func (skipList *SkipList) Insert(key string, val model.Record) {
 	found, journey := skipList.search(key)
 
 	// if the requested key already exists we can swap its current value for the newly supplied value
@@ -104,11 +104,11 @@ func (skipList *SkipList) Delete(key string) {
 }
 
 // finding the precise value residing at a requested key; returns -1 if key not found and error
-func (skipList *SkipList) Find(key string) (model.MemtableRecord, error) {
+func (skipList *SkipList) Find(key string) (model.Record, error) {
 	found, _ := skipList.search(key)
 
 	if found == nil || found.val.Tombstone == 1 {
-		return model.MemtableRecord{}, errors.New("key not found")
+		return model.Record{}, errors.New("key not found")
 	}
 
 	return found.val, nil
@@ -122,7 +122,7 @@ func (skipList *SkipList) IsFull(capacity uint64) bool {
 func roll() int {
 	level := 1
 	// possible ret values from rand are 0 and 1
-	// we stop shen we get a 0
+	// we stop when we get a 0
 	for ; rand.Int31n(2) == 1; level++ {
 		if level >= maxHeight {
 			return level
