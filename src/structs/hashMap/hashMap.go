@@ -7,7 +7,7 @@ import (
 )
 
 type HashMap struct {
-	data map[string]*model.MemtableRecord
+	data map[string]*model.Record
 }
 
 func (hashMap *HashMap) IsFull(capacity uint64) bool {
@@ -17,10 +17,10 @@ func (hashMap *HashMap) IsFull(capacity uint64) bool {
 func NewHashMap() *HashMap {
 
 	return &HashMap{
-		data: make(map[string]*model.MemtableRecord),
+		data: make(map[string]*model.Record),
 	}
 }
-func (hashMap *HashMap) Insert(key string, value model.MemtableRecord) {
+func (hashMap *HashMap) Insert(key string, value model.Record) {
 	hashMap.data[key] = &value
 }
 func (hashMap *HashMap) Delete(key string) {
@@ -31,14 +31,14 @@ func (hashMap *HashMap) Delete(key string) {
 
 }
 
-func (hashMap *HashMap) Find(key string) (model.MemtableRecord, error) {
+func (hashMap *HashMap) Find(key string) (model.Record, error) {
 	record, exists := hashMap.data[key]
 	if exists && record.Tombstone == 0 {
 		return *hashMap.data[key], nil
 	}
-	return model.MemtableRecord{}, errors.New("record not found")
+	return model.Record{}, errors.New("record not found")
 }
 
 func (hashMap *HashMap) ClearData() {
-	hashMap.data = make(map[string]*model.MemtableRecord)
+	hashMap.data = make(map[string]*model.Record)
 }

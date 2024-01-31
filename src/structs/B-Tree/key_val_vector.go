@@ -4,7 +4,7 @@ import "github.com/natasakasikovic/Key-Value-engine/src/model"
 
 type key_value_pair struct {
 	key   string
-	value model.MemtableRecord
+	value model.Record
 }
 
 // Vector (array) containing keys and the values they represent.
@@ -14,14 +14,14 @@ type kv_vector struct {
 }
 
 // Pushes a key-value pair to the end of a vector.
-func (vec *kv_vector) PushBack(key string, value model.MemtableRecord) {
+func (vec *kv_vector) PushBack(key string, value model.Record) {
 	var item key_value_pair = key_value_pair{key: key, value: value}
 	vec.data = append(vec.data, item)
 }
 
 // Inserts a key-value pair at the specified index, pushing other elements forward.
-func (vec *kv_vector) Insert(index uint, key string, value model.MemtableRecord) {
-	vec.PushBack("", model.MemtableRecord{})
+func (vec *kv_vector) Insert(index uint, key string, value model.Record) {
+	vec.PushBack("", model.Record{})
 	copy(vec.data[index+1:], vec.data[index:])
 	vec.data[index] = key_value_pair{key: key, value: value}
 }
@@ -46,24 +46,24 @@ func (vec *kv_vector) GetKeyAt(index int) string {
 	return vec.getPairRef(index).key
 }
 
-func (vec *kv_vector) GetValueAt(index int) model.MemtableRecord {
+func (vec *kv_vector) GetValueAt(index int) model.Record {
 	return vec.getPairRef(index).value
 }
 
-func (vec *kv_vector) GetValueReferenceAt(index int) *model.MemtableRecord {
+func (vec *kv_vector) GetValueReferenceAt(index int) *model.Record {
 	return &vec.getPairRef(index).value
 }
 
-func (vec *kv_vector) SetValueAt(index int, value model.MemtableRecord) {
+func (vec *kv_vector) SetValueAt(index int, value model.Record) {
 	vec.data[index].value = value
 }
 
-func (vec *kv_vector) Set(index int, key string, value model.MemtableRecord) {
+func (vec *kv_vector) Set(index int, key string, value model.Record) {
 	vec.data[index].key = key
 	vec.data[index].value = value
 }
 
-func (vec *kv_vector) Get(index int) (string, model.MemtableRecord) {
+func (vec *kv_vector) Get(index int) (string, model.Record) {
 	return vec.data[index].key, vec.data[index].value
 }
 
