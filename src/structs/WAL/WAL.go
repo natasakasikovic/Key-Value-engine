@@ -3,6 +3,7 @@ package WAL
 import (
 	"encoding/binary"
 	"fmt"
+	"github.com/natasakasikovic/Key-Value-engine/src/model"
 	"io"
 	"log"
 	"os"
@@ -10,6 +11,20 @@ import (
 	"strings"
 )
 
+const (
+	CRC_SIZE        = 4
+	TIMESTAMP_SIZE  = 8
+	TOMBSTONE_SIZE  = 1
+	KEY_SIZE_SIZE   = 8
+	VALUE_SIZE_SIZE = 8
+
+	CRC_START        = 0
+	TIMESTAMP_START  = CRC_START + CRC_SIZE
+	TOMBSTONE_START  = TIMESTAMP_START + TIMESTAMP_SIZE
+	KEY_SIZE_START   = TOMBSTONE_START + TOMBSTONE_SIZE
+	VALUE_SIZE_START = KEY_SIZE_START + KEY_SIZE_SIZE
+	KEY_START        = VALUE_SIZE_START + VALUE_SIZE_SIZE
+)
 const (
 	FILE_NAME = "log_"
 )
@@ -76,9 +91,9 @@ func setBytesFromLastSegmentFromFile(value int64, watermark int32) error {
 }
 func NewWAL(maxBytesPerFile uint32) (*WAL, error) {
 
-	files, err := os.ReadDir("log")
+	files, err := os.ReadDir("data/log")
 	if os.IsNotExist(err) {
-		err := os.Mkdir("log", os.ModeDir)
+		err := os.Mkdir("data/log", os.ModeDir)
 		if err != nil {
 			return nil, err
 		}
@@ -92,10 +107,10 @@ func NewWAL(maxBytesPerFile uint32) (*WAL, error) {
 	var path string
 	//If there are no files
 	if len(list) == 0 {
-		path = fmt.Sprintf("log%c%s%s.log", os.PathSeparator, FILE_NAME, "0001")
+		path = fmt.Sprintf("data%clog%c%s%s.log", os.PathSeparator, os.PathSeparator, FILE_NAME, "0001")
 		list = append(list, fmt.Sprintf("%s%s.log", FILE_NAME, "0001"))
 	} else {
-		path = fmt.Sprintf("log%c%s", os.PathSeparator, list[len(list)-1])
+		path = fmt.Sprintf("data%clog%c%s", os.PathSeparator, os.PathSeparator, list[len(list)-1])
 	}
 	currentFile, err := os.OpenFile(path, os.O_RDWR|os.O_CREATE, 0644)
 	if err != nil {
@@ -114,12 +129,12 @@ func NewWAL(maxBytesPerFile uint32) (*WAL, error) {
 		bytesFromLastSegment: bytesFromLastSegment}, nil
 }
 func (wal *WAL) Commit(key string, value []byte, tombstone byte) {
-	err := wal.Append(NewRecord(tombstone, key, value))
+	err := wal.Append(model.NewRecord(tombstone, key, value))
 	if err != nil {
 		return
 	}
 }
-func (wal *WAL) Append(r *Record) error {
+func (wal *WAL) Append(r *model.Record) error {
 	data := r.RecordToBytes()
 	fileLength, err := getFileLength(wal.currentFile)
 	if err != nil {
@@ -160,7 +175,7 @@ func (wal *WAL) Append(r *Record) error {
 		if err != nil {
 			return err
 		}
-		path := fmt.Sprintf("log%c%s%04d.log", os.PathSeparator, FILE_NAME, br+1) // making next file
+		path := fmt.Sprintf("data%clog%c%s%04d.log", os.PathSeparator, os.PathSeparator, FILE_NAME, br+1) // making next file
 		fileName := fmt.Sprintf("%s%04d.log", FILE_NAME, br+1)
 		wal.segmentNames = append(wal.segmentNames, fileName)
 		wal.currentFile, err = os.OpenFile(path, os.O_RDWR|os.O_CREATE, 0644)
@@ -177,9 +192,9 @@ func (wal *WAL) Append(r *Record) error {
 
 func (wal *WAL) ReadRecords() error {
 	bytesToTransfer := make([]byte, 0)
-	didBreak := false
 	for i, fileName := range wal.segmentNames {
-		file, err := os.OpenFile("log"+string(os.PathSeparator)+fileName, os.O_RDONLY, 644)
+		path := fmt.Sprintf("data%clog%c%s", os.PathSeparator, os.PathSeparator, fileName)
+		file, err := os.OpenFile(path, os.O_RDONLY, 644)
 		defer file.Close()
 		if err != nil {
 			return err
@@ -210,45 +225,32 @@ func (wal *WAL) ReadRecords() error {
 			if bytesLeft < 29 {
 				bytesToTransfer = make([]byte, bytesLeft)
 				copy(bytesToTransfer, data[offset:])
-				//err := file.Close()
 				if err != nil {
 					return err
 				}
-				didBreak = true
 				break
 			} else {
 				keySize := binary.BigEndian.Uint64(data[KEY_SIZE_START : KEY_SIZE_START+KEY_SIZE_SIZE])
 				valueSize := binary.BigEndian.Uint64(data[VALUE_SIZE_START : VALUE_SIZE_START+VALUE_SIZE_SIZE])
 				//Sad kad znamo celu duzinu ako je ostalo vise bajtova nego duzina recorda opet otvaraj novi
-				if uint64(bytesLeft) <= 29+keySize+valueSize && i != len(wal.segmentNames)-1 {
+				if uint64(bytesLeft) <= 29+keySize+valueSize+1 && i != len(wal.segmentNames)-1 {
 					bytesToTransfer = make([]byte, bytesLeft)
 					copy(bytesToTransfer, data[offset:])
-					//err := file.Close()
 					if err != nil {
 						return err
 					}
-					didBreak = true
 					break
 				} else { //U suprotnom ucitaj record
-					record, bytesRead, err := ReadSingleRecord(data[offset:])
+					record, bytesRead, err := model.ReadSingleRecord(data[offset:])
 					if err != nil {
 						return err
 					}
-					//Citamo recorde 1 po 1
-					//Kada se podaci iz memtabele izgube, ovde citamo 1 po 1 zapis
-					//I na osnovu zapisa ponovo popunjavamo novu memtabelu
-					//npr memtable.add (record.key, record.value) ili memtable.delete(record.key) ako je tombstone != 0
+					//Read records 1 by 1
+					//memtable.Put(record.key, record.value, record.timestamp, record.tombstone)
 					fmt.Println(record)
 
 					offset += bytesRead
-					didBreak = false
 				}
-			}
-		}
-		if !didBreak {
-			//err = file.Close()
-			if err != nil {
-				log.Fatal(err)
 			}
 		}
 	}
@@ -257,7 +259,7 @@ func (wal *WAL) ReadRecords() error {
 
 func (wal *WAL) ClearLog() error {
 	for i := int32(0); i < wal.lowWaterMark-1; i++ {
-		err := os.Remove("log" + string(os.PathSeparator) + wal.segmentNames[i])
+		err := os.Remove("data" + string(os.PathSeparator) + "log" + string(os.PathSeparator) + wal.segmentNames[i])
 		if err != nil {
 			return err
 		}
@@ -271,8 +273,8 @@ func (wal *WAL) ClearLog() error {
 		num := i - wal.lowWaterMark + 2
 		newName := fmt.Sprintf("%s%04d.log", FILE_NAME, num)
 		oldName := wal.segmentNames[i]
-		oldPath := "log" + string(os.PathSeparator) + oldName
-		newPath := "log" + string(os.PathSeparator) + newName
+		oldPath := "data" + string(os.PathSeparator) + "log" + string(os.PathSeparator) + oldName
+		newPath := "data" + string(os.PathSeparator) + "log" + string(os.PathSeparator) + newName
 		err := os.Rename(oldPath, newPath)
 		if err != nil {
 			log.Fatal(err)
@@ -285,7 +287,7 @@ func (wal *WAL) ClearLog() error {
 	if err != nil {
 		return err
 	}
-	wal.currentFile, err = os.OpenFile("log"+string(os.PathSeparator)+newSegmentNames[len(newSegmentNames)-1], os.O_RDWR|os.O_CREATE, 0644)
+	wal.currentFile, err = os.OpenFile("data"+string(os.PathSeparator)+"log"+string(os.PathSeparator)+newSegmentNames[len(newSegmentNames)-1], os.O_RDWR|os.O_CREATE, 0644)
 	wal.segmentNames = newSegmentNames
 	fmt.Println(wal.segmentNames)
 
@@ -303,7 +305,6 @@ func (wal *WAL) UpdateWatermark() error {
 	if err != nil {
 		return err
 	}
-	//err = wal.ClearLog()
 	return nil
 }
 
