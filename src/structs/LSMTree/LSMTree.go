@@ -1,17 +1,5 @@
 package lsmtree
 
-/*
-STA MI TREBA:
-	-OBAVEZNO:
-	u konfig:
-		LSMFirstLevelSize (ceo broj)
-		LSMGrowthFactor (ceo broj)
-		LSMCompactionType (string "leveled" ili "sizetiered")
-	oni atributi za sstable da su javni
-	-Bilo bi jako lepo:
-		LoadSSTable metodica
-*/
-
 import (
 	"encoding/binary"
 	"encoding/json"
@@ -19,7 +7,6 @@ import (
 	"io"
 	"os"
 
-	"github.com/natasakasikovic/Key-Value-engine/src/config"
 	"github.com/natasakasikovic/Key-Value-engine/src/model"
 	"github.com/natasakasikovic/Key-Value-engine/src/structs/sstable"
 	"github.com/natasakasikovic/Key-Value-engine/src/utils"
@@ -98,27 +85,51 @@ type LSMTree struct {
 	sstableArrays  [][]*sstable.SSTable //Array of arrays of SSTable pointers
 	maxDepth       uint32
 	compactionType string
-	config         *config.Config
+	firstLevelSize uint32
+	growthFactor   uint32
+
+	sstableIndexDegree   uint32
+	sstableSummaryDegree uint32
+	sstableInSameFile    bool
+	sstableCompressionOn bool
 }
 
-func NewLSMTree(conf *config.Config) LSMTree {
+func NewLSMTree(maxDepth uint32, compactionType string, firstLevelSize uint32, growthFactor uint32,
+	sstableIndexDegree uint32, sstableSummaryDegree uint32, sstableInSameFile bool, sstableCompressionOn bool) *LSMTree {
 	//TODO
 	//Update when config gets updated with lsm stuff
-	var tree LSMTree = LSMTree{}
-	tree.config = conf
-	tree.sstableArrays = make([][]*sstable.SSTable, conf.LSMTreeMaxDepth)
-	for i := 0; i < int(conf.LSMTreeMaxDepth); i++ {
+	var tree *LSMTree = &LSMTree{
+		maxDepth:             maxDepth,
+		compactionType:       compactionType,
+		firstLevelSize:       firstLevelSize,
+		growthFactor:         growthFactor,
+		sstableIndexDegree:   sstableIndexDegree,
+		sstableSummaryDegree: sstableSummaryDegree,
+		sstableInSameFile:    sstableInSameFile,
+		sstableCompressionOn: sstableCompressionOn,
+	}
+
+	tree.sstableArrays = make([][]*sstable.SSTable, maxDepth)
+	for i := 0; i < int(maxDepth); i++ {
 		tree.sstableArrays[i] = make([]*sstable.SSTable, 0)
 	}
-	tree.maxDepth = conf.LSMTreeMaxDepth
-	tree.compactionType = ""
 	return tree
 }
 
-const LSM_PATH string = "../data/LSMTree.json"
+const LSM_PATH string = "../../../data/LSMTree.json"
 
-func LoadLSMTreeFromFile(conf *config.Config) *LSMTree {
-	var lsm LSMTree = NewLSMTree(conf)
+// Returns a pointer to the lsm tree if loaded successfuly
+// Otherwise, returns nil
+func LoadLSMTreeFromFile(maxDepth uint32, compactionType string, firstLevelSize uint32, growthFactor uint32,
+	sstableIndexDegree uint32, sstableSummaryDegree uint32, sstableInSameFile bool, sstableCompressionOn bool) *LSMTree {
+	var lsm LSMTree = *NewLSMTree(maxDepth,
+		compactionType,
+		firstLevelSize,
+		growthFactor,
+		sstableIndexDegree,
+		sstableSummaryDegree,
+		sstableInSameFile,
+		sstableCompressionOn)
 
 	jsonData, err := os.ReadFile(LSM_PATH)
 
@@ -154,6 +165,7 @@ func LoadLSMTreeFromFile(conf *config.Config) *LSMTree {
 				return nil
 			}
 
+			table.Name = dirName
 			lsm.sstableArrays[i] = append(lsm.sstableArrays[i], table)
 		}
 	}
@@ -189,10 +201,70 @@ func (tree *LSMTree) SaveToFile() error {
 	return nil
 }
 
+func isSSTableInSingleFile(table *sstable.SSTable) (bool, error) {
+	sstableFolder, err := utils.GetDirContent(fmt.Sprintf("%s/%s", sstable.PATH, table.Name)) // dirContent - names of all sstables dirs
+	if err != nil {
+		return false, err
+	}
+
+	if len(sstableFolder) > 1 {
+		return false, nil
+	} else {
+		return true, nil
+	}
+}
+
+// Returns the offset where data begins, and the offset right after the data ends
+func getDataOffsets(table *sstable.SSTable) (int64, int64, error) {
+	oneFile, err := isSSTableInSingleFile(table)
+	if err != nil {
+		return 0, 0, err
+	}
+
+	if !oneFile {
+		//IF THE SSTABLE IS IN SEPERATE FILES
+		fileLen, err := table.Data.Seek(0, io.SeekEnd)
+		return table.DataOffset, fileLen, err
+	} else {
+		//IF THE WHOLE SSTABLE IS IN THE SAME FILE
+		return table.DataOffset, table.IndexOffset, nil
+	}
+}
+
+// Updates the os.File pointers of the sstables after renaming
+func (tree *LSMTree) reopenSSTables() error {
+	var err error = nil
+	for i := 0; i < int(tree.maxDepth); i++ {
+		for j := 0; j < len(tree.sstableArrays[i]); j++ {
+			var table *sstable.SSTable = tree.sstableArrays[i][j]
+			var name string = table.Name
+			var path string = fmt.Sprintf("%s/%s", sstable.PATH, table.Name)
+			closeSSTable(table)
+
+			var singleFile bool
+			singleFile, err = isSSTableInSingleFile(table)
+			if err != nil {
+				return err
+			}
+
+			if !singleFile {
+				tree.sstableArrays[i][j], err = sstable.LoadSSTableSeparate(path)
+			} else {
+				tree.sstableArrays[i][j], err = sstable.LoadSStableSingle(path)
+			}
+			tree.sstableArrays[i][j].Name = name
+
+			if err != nil {
+				return err
+			}
+		}
+	}
+	return err
+}
+
 // Merges the passed sstables and splits them into new sstables
-// Each new sstable contains at most maxSSTableElem elements
-// Merges into a single sstable if maxSSTableElem is 0
-func mergeSSTables(sstableArray []*sstable.SSTable, conf config.Config) (*sstable.SSTable, error) {
+func mergeSSTables(sstableArray []*sstable.SSTable, sstableIndexDegree uint32, sstableSummaryDegree uint32,
+	sstableInSameFile bool, sstableCompressionOn bool) (*sstable.SSTable, error) {
 	var sstableCount int = len(sstableArray)
 
 	var records []*model.Record = make([]*model.Record, sstableCount)
@@ -203,16 +275,15 @@ func mergeSSTables(sstableArray []*sstable.SSTable, conf config.Config) (*sstabl
 
 	//Initialize file iterators
 	for i := 0; i < sstableCount; i++ {
-		fileOffsets[i] = sstableArray[i].DataOffset
-
 		var err error
-		if sstableArray[i].DataOffset == 0 {
-			fileOffsetLimits[i], err = sstableArray[i].Data.Seek(0, io.SeekEnd)
-			if err != nil {
-				return nil, err
-			}
-		} else {
-			fileOffsetLimits[i] = sstableArray[i].IndexOffset
+		sstableArray[i].Data, err = os.Open(sstableArray[i].Data.Name())
+		if err != nil {
+			return nil, err
+		}
+
+		fileOffsets[i], fileOffsetLimits[i], err = getDataOffsets(sstableArray[i])
+		if err != nil {
+			return nil, err
 		}
 
 		sstableArray[i].Data.Seek(fileOffsets[i], io.SeekStart)
@@ -318,7 +389,7 @@ func mergeSSTables(sstableArray []*sstable.SSTable, conf config.Config) (*sstabl
 			break
 		}
 
-		for getKeyCount(minKey) > 0 {
+		for getKeyCount(minKey) > 1 {
 			err := moveDuplicatesForward(minKey)
 			if err != nil {
 				return nil, err
@@ -336,13 +407,19 @@ func mergeSSTables(sstableArray []*sstable.SSTable, conf config.Config) (*sstabl
 	}
 	//TODO
 	//Complete when config gets updated
-	newSSTable, err := sstable.CreateSStable(newRecords, conf.SSTableInSameFile, conf.CompressionOn, int(conf.IndexSummaryDegree), int(conf.IndexSummaryDegree))
+	newSSTable, err := sstable.CreateSStable(newRecords, sstableInSameFile, sstableCompressionOn, int(sstableIndexDegree), int(sstableSummaryDegree))
 
 	if err != nil {
 		return nil, err
 	}
 
 	return newSSTable, nil
+}
+
+func closeSSTable(table *sstable.SSTable) {
+	table.Data.Close()
+	table.Index.Close()
+	table.Summary.Close()
 }
 
 // Deletes the passed sstable from the disk and updates the name attribute of other sstables
@@ -366,7 +443,7 @@ func (tree *LSMTree) deleteTable(table *sstable.SSTable) error {
 	}
 
 	for j := i; j < len(dirContent)-1; j++ {
-		nameMapping[dirContent[j]] = dirContent[j+1]
+		nameMapping[dirContent[j+1]] = dirContent[j]
 	}
 
 	for i := 0; i < int(tree.maxDepth); i++ {
@@ -374,10 +451,14 @@ func (tree *LSMTree) deleteTable(table *sstable.SSTable) error {
 			newName, exists := nameMapping[tree.sstableArrays[i][j].Name]
 			if exists {
 				tree.sstableArrays[i][j].Name = newName
+				closeSSTable(tree.sstableArrays[i][j])
 			}
 		}
 	}
 
+	table.Data.Close()
+	table.Index.Close()
+	table.Summary.Close()
 	table.Delete()
 	return nil
 }
@@ -443,7 +524,8 @@ func (tree *LSMTree) leveledCompaction(levelIndex uint32) error {
 			toMerge = append(toMerge, tree.sstableArrays[levelIndex+1][i])
 		}
 
-		merged, err := mergeSSTables(toMerge, *tree.config)
+		merged, err := mergeSSTables(toMerge, tree.sstableIndexDegree, tree.sstableSummaryDegree,
+			tree.sstableInSameFile, tree.sstableCompressionOn)
 
 		if err != nil {
 			return err
@@ -467,6 +549,8 @@ func (tree *LSMTree) leveledCompaction(levelIndex uint32) error {
 			tree.sstableArrays[levelIndex+1][lowerLevelLen-1-i] = nil
 		}
 		tree.sstableArrays[levelIndex+1] = tree.sstableArrays[levelIndex+1][:lowerLevelLen-tablesLost]
+
+		tree.reopenSSTables()
 	}
 
 	//Remove the upper sstable from the upper level
@@ -486,11 +570,13 @@ func (tree *LSMTree) sizeTieredCompaction(levelIndex uint32) error {
 	}
 
 	//Merge all sstables into a single new sstable
-	merged, err := mergeSSTables(toMerge, *tree.config)
+	merged, err := mergeSSTables(toMerge, tree.sstableIndexDegree, tree.sstableSummaryDegree,
+		tree.sstableInSameFile, tree.sstableCompressionOn)
 
 	if err != nil {
 		return err
 	}
+	tree.sstableArrays[levelIndex+1] = append(tree.sstableArrays[levelIndex+1], merged)
 
 	//Delete old sstables
 	for i := 0; i < len(tree.sstableArrays[levelIndex]); i++ {
@@ -500,7 +586,7 @@ func (tree *LSMTree) sizeTieredCompaction(levelIndex uint32) error {
 	clear(tree.sstableArrays[levelIndex])
 	tree.sstableArrays[levelIndex] = tree.sstableArrays[levelIndex][:0]
 
-	tree.sstableArrays[levelIndex+1] = append(tree.sstableArrays[levelIndex+1], merged)
+	tree.reopenSSTables()
 	return nil
 }
 

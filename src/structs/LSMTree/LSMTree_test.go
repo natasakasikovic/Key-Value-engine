@@ -27,7 +27,14 @@ func TestSvasta(t *testing.T) {
 		TokenResetInterval:   60,
 	}
 
-	var lsm LSMTree = NewLSMTree(&conf)
+	var lsm_p *LSMTree = LoadLSMTreeFromFile(7, "sizetiered", 10, 10, 5, 5, true, false)
+
+	var lsm LSMTree
+	if lsm_p == nil {
+		lsm = *NewLSMTree(7, "sizetiered", 10, 10, 5, 5, true, false)
+	} else {
+		lsm = *lsm_p
+	}
 
 	var records1 []*model.Record = []*model.Record{
 		model.NewRecord(0, "a", []byte("a")),
@@ -47,18 +54,25 @@ func TestSvasta(t *testing.T) {
 		model.NewRecord(0, "i", []byte("c")),
 	}
 
+	var wait int = 0
+	for i := 0; i < 10000000; i++ {
+		wait += 1
+	}
+
 	var records4 []*model.Record = []*model.Record{
 		model.NewRecord(0, "a", []byte("a")),
 		model.NewRecord(0, "i", []byte("b")),
 	}
 
 	newSSTable1, _ := sstable.CreateSStable(records1, conf.SSTableInSameFile, conf.CompressionOn, int(conf.IndexSummaryDegree), int(conf.IndexSummaryDegree))
-	newSSTable2, _ := sstable.CreateSStable(records2, conf.SSTableInSameFile, conf.CompressionOn, int(conf.IndexSummaryDegree), int(conf.IndexSummaryDegree))
-	newSSTable3, _ := sstable.CreateSStable(records3, conf.SSTableInSameFile, conf.CompressionOn, int(conf.IndexSummaryDegree), int(conf.IndexSummaryDegree))
-	newSSTable4, _ := sstable.CreateSStable(records4, conf.SSTableInSameFile, conf.CompressionOn, int(conf.IndexSummaryDegree), int(conf.IndexSummaryDegree))
-
 	lsm.AddSSTable(newSSTable1)
+	newSSTable2, _ := sstable.CreateSStable(records2, conf.SSTableInSameFile, conf.CompressionOn, int(conf.IndexSummaryDegree), int(conf.IndexSummaryDegree))
 	lsm.AddSSTable(newSSTable2)
+	newSSTable4, _ := sstable.CreateSStable(records4, conf.SSTableInSameFile, conf.CompressionOn, int(conf.IndexSummaryDegree), int(conf.IndexSummaryDegree))
 	lsm.AddSSTable(newSSTable4)
+	newSSTable3, _ := sstable.CreateSStable(records3, conf.SSTableInSameFile, conf.CompressionOn, int(conf.IndexSummaryDegree), int(conf.IndexSummaryDegree))
 	lsm.AddSSTable(newSSTable3)
+
+	lsm.SaveToFile()
+
 }
