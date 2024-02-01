@@ -6,10 +6,14 @@
     "skip_list_max_height": 3,
     "b_tree_order": 3,
     "lru_cache_max_size": 5,
-    "index_summary_degree": 5,
+    "index_degree": 5,
+    "summary_degree": 5,
     "ss_table_in_same_file": false,
     "compression_on": false,
     "lsm_tree_max_depth": 7,
     "number_of_tokens": 10,
-    "token_reset_interval": 60
+    "token_reset_interval": 60,
+    "LSMFirstLevelSize": 10,
+    "LSMGrowthFactor": 9,
+    "LSMCompactionType": "sizetiered"
 }
