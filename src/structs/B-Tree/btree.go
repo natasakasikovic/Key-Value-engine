@@ -231,8 +231,28 @@ func (btree *BTree) Delete(key string) {
 	}
 }
 
+func clearNode(node *btree_node) {
+	if !node.is_leaf {
+		var childCount int = node.key_value_list.Size() + 1
+		for i := 0; i < childCount; i++ {
+			clearNode(node.subtrees[i])
+		}
+	}
+	node.freeMemory()
+}
+
 func (btree *BTree) ClearData() {
+	clearNode(btree.root)
+
+	var head *btree_node = &btree_node{key_value_list: kv_vector{},
+		is_leaf:  true,
+		subtrees: make([]*btree_node, btree.order+2),
+		parent:   nil,
+	}
+
 	btree.height = 0
+	btree.size = 0
+	btree.root = head
 }
 
 func (btree *BTree) IsFull(capacity uint64) bool {
