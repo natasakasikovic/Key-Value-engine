@@ -27,11 +27,11 @@ func TestSvasta(t *testing.T) {
 		TokenResetInterval:   60,
 	}
 
-	var lsm_p *LSMTree = LoadLSMTreeFromFile(7, "sizetiered", 10, 10, 5, 5, true, false)
+	var lsm_p *LSMTree = LoadLSMTreeFromFile(7, "", 3, 10, 5, 5, false, false)
 
 	var lsm LSMTree
 	if lsm_p == nil {
-		lsm = *NewLSMTree(7, "sizetiered", 10, 10, 5, 5, true, false)
+		lsm = *NewLSMTree(7, "sizetiered", 3, 10, 5, 5, false, false)
 	} else {
 		lsm = *lsm_p
 	}

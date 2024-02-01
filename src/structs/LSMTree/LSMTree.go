@@ -1,85 +1,15 @@
 package lsmtree
 
 import (
-	"encoding/binary"
 	"encoding/json"
 	"fmt"
-	"io"
 	"os"
 
 	"github.com/natasakasikovic/Key-Value-engine/src/model"
+	"github.com/natasakasikovic/Key-Value-engine/src/structs/iterators"
 	"github.com/natasakasikovic/Key-Value-engine/src/structs/sstable"
 	"github.com/natasakasikovic/Key-Value-engine/src/utils"
 )
-
-// deserializes a record by reading field by field from the file
-// returns Record, number of bytes read, error
-func Deserialize(file *os.File) (*model.Record, uint64, error) {
-	var err error
-	var record model.Record = model.Record{}
-
-	var keySizeBuffer []byte = make([]byte, 8)
-	_, err = io.ReadAtLeast(file, keySizeBuffer, 8)
-	if err != nil {
-		return nil, 0, err
-	}
-	record.KeySize = binary.BigEndian.Uint64(keySizeBuffer)
-
-	var bufferKey []byte = make([]byte, record.KeySize)
-	_, err = io.ReadAtLeast(file, bufferKey, int(record.KeySize))
-	if err != nil {
-		return nil, 0, err
-	}
-	record.Key = string(bufferKey)
-
-	var crcBuffer []byte = make([]byte, 4)
-	_, err = io.ReadAtLeast(file, crcBuffer, 4)
-	if err != nil {
-		return nil, 0, err
-	}
-	crc := binary.BigEndian.Uint32(crcBuffer)
-	record.Crc = crc
-
-	var timestampBuffer []byte = make([]byte, 8)
-	_, err = io.ReadAtLeast(file, timestampBuffer, 8)
-	if err != nil {
-		return nil, 0, err
-	}
-	timestamp := binary.BigEndian.Uint64(timestampBuffer)
-	record.Timestamp = timestamp
-
-	var tombstoneBuffer []byte = make([]byte, 1)
-	_, err = io.ReadAtLeast(file, tombstoneBuffer, 1)
-	if err != nil {
-		return nil, 0, err
-	}
-	tombstone := tombstoneBuffer[0]
-	record.Tombstone = byte(tombstone)
-
-	read := 8 + record.KeySize + 1 + 8 + 4
-	if tombstone != 1 {
-		var valueSizeBuffer []byte = make([]byte, 8)
-		_, err = io.ReadAtLeast(file, valueSizeBuffer, 8)
-		if err != nil {
-			return nil, 0, err
-		}
-		record.ValueSize = binary.BigEndian.Uint64(valueSizeBuffer)
-
-		var valueBuffer []byte = make([]byte, record.ValueSize)
-		_, err = io.ReadAtLeast(file, valueBuffer, int(record.ValueSize))
-
-		if err != nil {
-			return nil, 0, err
-		}
-		record.Value = valueBuffer
-		read += (8 + record.ValueSize)
-	} else {
-		record.ValueSize = 0
-		record.Value = []byte{}
-	}
-
-	return &record, read, nil
-}
 
 type LSMTree struct {
 	sstableArrays  [][]*sstable.SSTable //Array of arrays of SSTable pointers
@@ -96,8 +26,6 @@ type LSMTree struct {
 
 func NewLSMTree(maxDepth uint32, compactionType string, firstLevelSize uint32, growthFactor uint32,
 	sstableIndexDegree uint32, sstableSummaryDegree uint32, sstableInSameFile bool, sstableCompressionOn bool) *LSMTree {
-	//TODO
-	//Update when config gets updated with lsm stuff
 	var tree *LSMTree = &LSMTree{
 		maxDepth:             maxDepth,
 		compactionType:       compactionType,
@@ -214,23 +142,6 @@ func isSSTableInSingleFile(table *sstable.SSTable) (bool, error) {
 	}
 }
 
-// Returns the offset where data begins, and the offset right after the data ends
-func getDataOffsets(table *sstable.SSTable) (int64, int64, error) {
-	oneFile, err := isSSTableInSingleFile(table)
-	if err != nil {
-		return 0, 0, err
-	}
-
-	if !oneFile {
-		//IF THE SSTABLE IS IN SEPERATE FILES
-		fileLen, err := table.Data.Seek(0, io.SeekEnd)
-		return table.DataOffset, fileLen, err
-	} else {
-		//IF THE WHOLE SSTABLE IS IN THE SAME FILE
-		return table.DataOffset, table.IndexOffset, nil
-	}
-}
-
 // Updates the os.File pointers of the sstables after renaming
 func (tree *LSMTree) reopenSSTables() error {
 	var err error = nil
@@ -268,32 +179,19 @@ func mergeSSTables(sstableArray []*sstable.SSTable, sstableIndexDegree uint32, s
 	var sstableCount int = len(sstableArray)
 
 	var records []*model.Record = make([]*model.Record, sstableCount)
-	var fileOffsets []int64 = make([]int64, sstableCount)
-	var fileOffsetLimits []int64 = make([]int64, sstableCount)
+	var fileIterators []*iterators.SSTableIterator = make([]*iterators.SSTableIterator, sstableCount)
 
 	const EMPTY_KEY string = ""
 
 	//Initialize file iterators
 	for i := 0; i < sstableCount; i++ {
 		var err error
-		sstableArray[i].Data, err = os.Open(sstableArray[i].Data.Name())
+		fileIterators[i], err = iterators.NewSSTableIterator(sstableArray[i])
 		if err != nil {
 			return nil, err
 		}
 
-		fileOffsets[i], fileOffsetLimits[i], err = getDataOffsets(sstableArray[i])
-		if err != nil {
-			return nil, err
-		}
-
-		sstableArray[i].Data.Seek(fileOffsets[i], io.SeekStart)
-
-		records[i], _, err = Deserialize(sstableArray[i].Data)
-		if err != nil {
-			return nil, err
-		}
-
-		fileOffsets[i], err = sstableArray[i].Data.Seek(0, io.SeekCurrent)
+		records[i], err = fileIterators[i].Next()
 		if err != nil {
 			return nil, err
 		}
@@ -304,7 +202,7 @@ func mergeSSTables(sstableArray []*sstable.SSTable, sstableIndexDegree uint32, s
 		var minimum string = EMPTY_KEY
 
 		for i := 0; i < sstableCount; i++ {
-			if records[i].Key != EMPTY_KEY && (records[i].Key < minimum || minimum == EMPTY_KEY) {
+			if records[i] != nil && (records[i].Key < minimum || minimum == EMPTY_KEY) {
 				minimum = records[i].Key
 			}
 		}
@@ -316,7 +214,7 @@ func mergeSSTables(sstableArray []*sstable.SSTable, sstableIndexDegree uint32, s
 	var getKeyCount func(string) uint = func(key string) uint {
 		var count uint = 0
 		for i := 0; i < sstableCount; i++ {
-			if records[i].Key == key {
+			if records[i] != nil && records[i].Key == key {
 				count++
 			}
 		}
@@ -324,20 +222,10 @@ func mergeSSTables(sstableArray []*sstable.SSTable, sstableIndexDegree uint32, s
 	}
 
 	var readNextRecord func(int) error = func(index int) error {
-		if fileOffsets[index] < fileOffsetLimits[index] {
-			var err error
-			records[index], _, err = Deserialize(sstableArray[index].Data)
-			if err != nil {
-				return err
-			}
-
-			fileOffsets[index], err = sstableArray[index].Data.Seek(0, io.SeekCurrent)
-			if err != nil {
-				return err
-			}
-		} else {
-			//If EOF, just give the record an empty key
-			records[index] = &model.Record{Key: EMPTY_KEY}
+		var err error
+		records[index], err = fileIterators[index].Next()
+		if err != nil {
+			return err
 		}
 		return nil
 	}
@@ -350,7 +238,7 @@ func mergeSSTables(sstableArray []*sstable.SSTable, sstableIndexDegree uint32, s
 		var latestTS uint64 = 0
 
 		for i := 0; i < sstableCount; i++ {
-			if records[i].Key == key && (records[i].Timestamp > latestTS || latestIndex == -1) {
+			if records[i] != nil && records[i].Key == key && (records[i].Timestamp > latestTS || latestIndex == -1) {
 				latestIndex = i
 				latestTS = records[i].Timestamp
 			}
@@ -358,7 +246,7 @@ func mergeSSTables(sstableArray []*sstable.SSTable, sstableIndexDegree uint32, s
 
 		//Move all duplicates that arent the latest record with the key forward
 		for i := 0; i < sstableCount; i++ {
-			if records[i].Key == key && i != latestIndex {
+			if records[i] != nil && records[i].Key == key && i != latestIndex {
 				err := readNextRecord(i)
 				if err != nil {
 					return err
@@ -374,7 +262,7 @@ func mergeSSTables(sstableArray []*sstable.SSTable, sstableIndexDegree uint32, s
 	//Only call after calling moveDuplicatesForward
 	var getIndexOfIteratorWithKey func(string) int = func(key string) int {
 		for i := 0; i < sstableCount; i++ {
-			if records[i].Key == key {
+			if records[i] != nil && records[i].Key == key {
 				return i
 			}
 		}
@@ -405,8 +293,6 @@ func mergeSSTables(sstableArray []*sstable.SSTable, sstableIndexDegree uint32, s
 			return nil, err
 		}
 	}
-	//TODO
-	//Complete when config gets updated
 	newSSTable, err := sstable.CreateSStable(newRecords, sstableInSameFile, sstableCompressionOn, int(sstableIndexDegree), int(sstableSummaryDegree))
 
 	if err != nil {
@@ -448,10 +334,10 @@ func (tree *LSMTree) deleteTable(table *sstable.SSTable) error {
 
 	for i := 0; i < int(tree.maxDepth); i++ {
 		for j := 0; j < len(tree.sstableArrays[i]); j++ {
+			closeSSTable(tree.sstableArrays[i][j])
 			newName, exists := nameMapping[tree.sstableArrays[i][j].Name]
 			if exists {
 				tree.sstableArrays[i][j].Name = newName
-				closeSSTable(tree.sstableArrays[i][j])
 			}
 		}
 	}
@@ -471,7 +357,7 @@ func (tree *LSMTree) leveledCompaction(levelIndex uint32) error {
 
 	//Index of the first table from the lower level that needs to be merged
 	//Index of the last table from the lower level that needs to be merged
-	var leftIndex int = -1
+	var leftIndex int = len(tree.sstableArrays[levelIndex+1])
 	var rightIndex int = -1
 
 	//Find first table that needs to be merged
@@ -491,7 +377,7 @@ func (tree *LSMTree) leveledCompaction(levelIndex uint32) error {
 		}
 	}
 
-	if leftIndex == -1 || rightIndex == -1 || (rightIndex < leftIndex) {
+	if leftIndex == len(tree.sstableArrays[levelIndex+1]) || rightIndex == -1 || (rightIndex < leftIndex) {
 		//If there is no overlap, just move the upper sstable to the lower level
 
 		//Find the index of the first sstable with keys larger than the upper sstable
@@ -600,21 +486,23 @@ func (tree *LSMTree) compact(levelIndex uint32) {
 
 func uintPow(x, y uint32) uint32 {
 	var i uint32
-	var result uint32 = x
-	for i = 1; i < y; i++ {
+	var result uint32 = 1
+	for i = 0; i < y; i++ {
 		result *= x
 	}
 	return result
 }
 
 func (tree *LSMTree) getCapacityOfLevel(levelIndex uint32) uint32 {
-	//TODO: Update with config values
 	if tree.compactionType == "leveled" {
-		//TODO: WRONG
-		return uintPow(2, levelIndex)
+		if levelIndex == 0 {
+			return 1
+		} else {
+			return tree.firstLevelSize * uintPow(tree.growthFactor, levelIndex-1)
+		}
+	} else {
+		return tree.firstLevelSize
 	}
-	//TODO: DUMB MAGIC NUMBER
-	return 2
 }
 
 func (tree *LSMTree) checkLevel(levelIndex uint32) {
