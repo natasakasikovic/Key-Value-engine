@@ -51,7 +51,7 @@ func (sstable *SSTable) readNextIndex() ([]byte, int, error) {
 	var data []byte
 
 	var keySizeBytes []byte = make([]byte, 8)
-	_, err = io.ReadAtLeast(sstable.index, keySizeBytes, 8)
+	_, err = io.ReadAtLeast(sstable.Index, keySizeBytes, 8)
 
 	if err != nil {
 		return nil, 0, err
@@ -59,14 +59,14 @@ func (sstable *SSTable) readNextIndex() ([]byte, int, error) {
 
 	keySize := binary.BigEndian.Uint64(keySizeBytes)
 	var bufferKey []byte = make([]byte, keySize)
-	_, err = io.ReadAtLeast(sstable.index, bufferKey, int(keySize))
+	_, err = io.ReadAtLeast(sstable.Index, bufferKey, int(keySize))
 
 	if err != nil {
 		return nil, 0, err
 	}
 
 	var offset []byte = make([]byte, 8)
-	_, err = io.ReadAtLeast(sstable.index, offset, 8)
+	_, err = io.ReadAtLeast(sstable.Index, offset, 8)
 
 	if err != nil {
 		return nil, 0, err
@@ -85,7 +85,7 @@ func (sstable *SSTable) loadIndexSeparate(offset1, offset2 int) ([]byte, int, er
 	var err error
 
 	if offset2 == 0 { // read until EOF
-		fileSize, err := utils.GetFileLength(sstable.index)
+		fileSize, err := utils.GetFileLength(sstable.Index)
 		if err != nil {
 			return nil, 0, err
 		}
@@ -94,7 +94,7 @@ func (sstable *SSTable) loadIndexSeparate(offset1, offset2 int) ([]byte, int, er
 		size = offset2 - offset1
 	}
 	data := make([]byte, size)
-	_, err = io.ReadAtLeast(sstable.index, data, size)
+	_, err = io.ReadAtLeast(sstable.Index, data, size)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -105,17 +105,17 @@ func (sstable *SSTable) loadIndexSeparate(offset1, offset2 int) ([]byte, int, er
 func (sstable *SSTable) loadIndexSingle(offset1, offset2 int) ([]byte, int, error) {
 	var size int
 
-	_, err := sstable.index.Seek(int64(sstable.indexOffset+int64(offset1)), 0)
+	_, err := sstable.Index.Seek(int64(sstable.IndexOffset+int64(offset1)), 0)
 	if err != nil {
 		return nil, 0, err
 	}
 	if offset2 == 0 {
-		size = int(sstable.summaryOffset - sstable.indexOffset - int64(offset1))
+		size = int(sstable.SummaryOffset - sstable.IndexOffset - int64(offset1))
 	} else {
 		size = offset2 - offset1
 	}
 	data := make([]byte, size)
-	_, err = io.ReadAtLeast(sstable.index, data, size)
+	_, err = io.ReadAtLeast(sstable.Index, data, size)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -132,7 +132,7 @@ func LoadSStableSingle(p string) (*SSTable, error) {
 		return nil, err
 	}
 
-	sstable.index, sstable.data, sstable.summary = file, file, file
+	sstable.Index, sstable.Data, sstable.Summary = file, file, file
 
 	// set min key
 	var minKeyLength uint64
@@ -145,7 +145,7 @@ func LoadSStableSingle(p string) (*SSTable, error) {
 	if err != nil {
 		return nil, err
 	}
-	sstable.minKey = string(minKeyBytes)
+	sstable.MinKey = string(minKeyBytes)
 
 	// set max key
 	var maxKeyLength uint64
@@ -158,7 +158,7 @@ func LoadSStableSingle(p string) (*SSTable, error) {
 	if err != nil {
 		return nil, err
 	}
-	sstable.maxKey = string(maxKeyBytes)
+	sstable.MaxKey = string(maxKeyBytes)
 
 	// set offsets
 	offsets := make([]uint64, 5)
@@ -169,7 +169,7 @@ func LoadSStableSingle(p string) (*SSTable, error) {
 		}
 	}
 
-	sstable.bfOffset, sstable.dataOffset, sstable.indexOffset, sstable.summaryOffset, sstable.merkleOffset =
+	sstable.BfOffset, sstable.DataOffset, sstable.IndexOffset, sstable.SummaryOffset, sstable.MerkleOffset =
 		int64(offsets[0]), int64(offsets[1]), int64(offsets[2]), int64(offsets[3]), int64(offsets[4])
 
 	return sstable, nil
@@ -186,7 +186,7 @@ func LoadSSTableSeparate(path string) (*SSTable, error) {
 	if err != nil {
 		return nil, err
 	}
-	sstable.summary = summaryFile
+	sstable.Summary = summaryFile
 
 	// set min key
 	var minKeyLength int64
@@ -201,7 +201,7 @@ func LoadSSTableSeparate(path string) (*SSTable, error) {
 		return nil, err
 	}
 
-	sstable.minKey = string(minKeyBytes)
+	sstable.MinKey = string(minKeyBytes)
 
 	//set max key
 	var maxKeyLength int64
@@ -216,24 +216,24 @@ func LoadSSTableSeparate(path string) (*SSTable, error) {
 		return nil, err
 	}
 
-	sstable.maxKey = string(maxKeyBytes)
+	sstable.MaxKey = string(maxKeyBytes)
 
 	// set index file
 	indexFile, err := os.Open(fmt.Sprintf("%s%s", path, "Index.db"))
 	if err != nil {
 		return nil, err
 	}
-	sstable.index = indexFile
+	sstable.Index = indexFile
 
 	// set data file
 	dataFile, err := os.Open(fmt.Sprintf("%s%s", path, "Data.db"))
 	if err != nil {
 		return nil, err
 	}
-	sstable.data = dataFile
+	sstable.Data = dataFile
 
-	sstable.bfOffset, sstable.dataOffset, sstable.indexOffset, sstable.merkleOffset = 0, 0, 0, 0
-	sstable.summaryOffset = 2*8 + minKeyLength + maxKeyLength
+	sstable.BfOffset, sstable.DataOffset, sstable.IndexOffset, sstable.MerkleOffset = 0, 0, 0, 0
+	sstable.SummaryOffset = 2*8 + minKeyLength + maxKeyLength
 
 	return sstable, nil
 }
@@ -256,16 +256,16 @@ func (sstable *SSTable) loadBF(separateFile bool, path string) error {
 			return err
 		}
 	} else {
-		file = sstable.data
-		toRead = make([]byte, int(sstable.dataOffset-sstable.bfOffset))
-		file.Seek(sstable.bfOffset, 0)
-		_, err = io.ReadAtLeast(sstable.data, toRead, len(toRead))
+		file = sstable.Data
+		toRead = make([]byte, int(sstable.DataOffset-sstable.BfOffset))
+		file.Seek(sstable.BfOffset, 0)
+		_, err = io.ReadAtLeast(sstable.Data, toRead, len(toRead))
 		if err != nil {
 			return err
 		}
 	}
 
-	sstable.bf = bloomFilter.Deserialize(toRead)
+	sstable.Bf = bloomFilter.Deserialize(toRead)
 	return nil
 }
 
@@ -275,19 +275,19 @@ func (sstable *SSTable) loadSummary(separateFile bool) ([]byte, error) {
 	var err error
 
 	if separateFile {
-		_, err = sstable.summary.Seek(sstable.summaryOffset, 0) // in separate files there are headers written, so seek
+		_, err = sstable.Summary.Seek(sstable.SummaryOffset, 0) // in separate files there are headers written, so seek
 		if err != nil {
 			return nil, err
 		}
-		content, err = io.ReadAll(sstable.summary)
+		content, err = io.ReadAll(sstable.Summary)
 		if err != nil {
 			return nil, err
 		}
 	} else {
-		var toReadLength int = int(sstable.merkleOffset - sstable.summaryOffset)
-		sstable.summary.Seek(sstable.summaryOffset, 0)
+		var toReadLength int = int(sstable.MerkleOffset - sstable.SummaryOffset)
+		sstable.Summary.Seek(sstable.SummaryOffset, 0)
 		data := make([]byte, toReadLength)
-		_, err = io.ReadAtLeast(sstable.summary, data, toReadLength)
+		_, err = io.ReadAtLeast(sstable.Summary, data, toReadLength)
 		if err != nil {
 			return nil, err
 		}
@@ -310,12 +310,12 @@ func (sstable *SSTable) makeSeparateFiles(path string, records []*model.Record, 
 	filter, _ := makeFile(path, "Filter")
 	merkle, _ := makeFile(path, "Metadata")
 	if data != nil && index != nil && summary != nil {
-		sstable.data = data
-		sstable.index = index
-		sstable.summary = summary
+		sstable.Data = data
+		sstable.Index = index
+		sstable.Summary = summary
 
-		minKeyBytes := []byte(sstable.minKey)
-		maxKeyBytes := []byte(sstable.maxKey)
+		minKeyBytes := []byte(sstable.MinKey)
+		maxKeyBytes := []byte(sstable.MaxKey)
 
 		var minKeyLength uint64 = uint64(len(minKeyBytes))
 		var maxKeyLength uint64 = uint64(len(maxKeyBytes))
@@ -329,9 +329,9 @@ func (sstable *SSTable) makeSeparateFiles(path string, records []*model.Record, 
 		var contentIndex [][]byte = sstable.serializeIndexSummary(contentData, n)
 		contentSummary = append(contentSummary, sstable.serializeIndexSummary(contentIndex, m)...)
 
-		var contentBf [][]byte = [][]byte{sstable.bf.Serialize()}
+		var contentBf [][]byte = [][]byte{sstable.Bf.Serialize()}
 
-		var contentMerkle [][]byte = [][]byte{sstable.merkle.Serialize()}
+		var contentMerkle [][]byte = [][]byte{sstable.Merkle.Serialize()}
 
 		sstable.writeToFile(data, contentData)
 		sstable.writeToFile(index, contentIndex)
@@ -349,13 +349,13 @@ func (sstable *SSTable) makeSeparateFiles(path string, records []*model.Record, 
 func (sstable *SSTable) writeToSingleFile(records []*model.Record, n int, m int) {
 	var content [][]byte
 
-	minKeyBytes := []byte(sstable.minKey)
-	maxKeyBytes := []byte(sstable.maxKey)
+	minKeyBytes := []byte(sstable.MinKey)
+	maxKeyBytes := []byte(sstable.MaxKey)
 
 	var minKeyLength uint64 = uint64(len(minKeyBytes))
 	var maxKeyLength uint64 = uint64(len(maxKeyBytes))
 	var bfOffset uint64 = 7*8 + minKeyLength + maxKeyLength
-	var contentBf [][]byte = [][]byte{sstable.bf.Serialize()}
+	var contentBf [][]byte = [][]byte{sstable.Bf.Serialize()}
 	var dataOffset uint64 = calculateOffset(contentBf, bfOffset)
 	var contentData [][]byte = sstable.serializeData(records)
 	var indexOffset uint64 = calculateOffset(contentData, dataOffset)
@@ -363,7 +363,7 @@ func (sstable *SSTable) writeToSingleFile(records []*model.Record, n int, m int)
 	var summaryOffset uint64 = calculateOffset(contentIndex, indexOffset)
 	var contentSummary [][]byte = sstable.serializeIndexSummary(contentIndex, m)
 	var merkleOffset uint64 = calculateOffset(contentSummary, summaryOffset)
-	var contentMerkle [][]byte = [][]byte{sstable.merkle.Serialize()}
+	var contentMerkle [][]byte = [][]byte{sstable.Merkle.Serialize()}
 
 	content = append(content, uint64ToBytes(minKeyLength))
 	content = append(content, minKeyBytes)
@@ -380,7 +380,7 @@ func (sstable *SSTable) writeToSingleFile(records []*model.Record, n int, m int)
 	content = append(content, contentSummary...)
 	content = append(content, contentMerkle...)
 
-	sstable.writeToFile(sstable.data, content)
+	sstable.writeToFile(sstable.Data, content)
 
 }
 
@@ -392,7 +392,7 @@ func (sstable *SSTable) makeSingleFile(path string, records []*model.Record, n i
 	if err != nil {
 		return err
 	}
-	sstable.index, sstable.data, sstable.summary = file, file, file
+	sstable.Index, sstable.Data, sstable.Summary = file, file, file
 	sstable.writeToSingleFile(records, n, m)
 	return nil
 }
@@ -424,13 +424,13 @@ func (sstable *SSTable) loadDataSeparate(offset2 int, offset1 int) ([]byte, erro
 	var data []byte
 
 	if offset2 == 0 {
-		sstable.data.Seek(int64(offset1), 0)
-		data, err = io.ReadAll(sstable.data)
+		sstable.Data.Seek(int64(offset1), 0)
+		data, err = io.ReadAll(sstable.Data)
 	} else {
 		offset := int(offset2 - offset1)
 		data = make([]byte, offset)
-		sstable.data.Seek(int64(offset1), 0)
-		_, err = io.ReadAtLeast(sstable.data, data, offset)
+		sstable.Data.Seek(int64(offset1), 0)
+		_, err = io.ReadAtLeast(sstable.Data, data, offset)
 		if err != nil {
 			return nil, err
 		}
@@ -445,14 +445,14 @@ func (sstable *SSTable) loadDataSingle(offset2 int, offset1 int) ([]byte, error)
 	var err error
 	var data []byte
 
-	sstable.data.Seek(sstable.dataOffset+int64(offset1), 0)
+	sstable.Data.Seek(sstable.DataOffset+int64(offset1), 0)
 	if offset2 == 0 {
-		toReadLength = int(sstable.indexOffset - sstable.dataOffset - int64(offset1))
+		toReadLength = int(sstable.IndexOffset - sstable.DataOffset - int64(offset1))
 	} else {
 		toReadLength = offset2 - offset1
 	}
 	data = make([]byte, toReadLength)
-	_, err = io.ReadAtLeast(sstable.data, data, toReadLength)
+	_, err = io.ReadAtLeast(sstable.Data, data, toReadLength)
 	if err != nil {
 		return nil, err
 	}
@@ -464,7 +464,7 @@ func (sstable *SSTable) loadData() ([]byte, error) {
 	var data []byte
 	var err error
 
-	if sstable.dataOffset != 0 {
+	if sstable.DataOffset != 0 {
 		data, err = sstable.loadDataSingle(0, 0)
 	} else {
 		data, err = sstable.loadDataSeparate(0, 0)
@@ -490,19 +490,19 @@ func (sstable *SSTable) loadMerkle(separateFile bool, path string) error {
 		}
 		toRead, err = io.ReadAll(file)
 	} else {
-		file = sstable.data
+		file = sstable.Data
 		fileSize, err := utils.GetFileLength(file)
 		if err != nil {
 			return err
 		}
-		toRead = make([]byte, fileSize-sstable.merkleOffset)
-		file.Seek(sstable.merkleOffset, 0)
-		_, err = io.ReadAtLeast(sstable.data, toRead, len(toRead))
+		toRead = make([]byte, fileSize-sstable.MerkleOffset)
+		file.Seek(sstable.MerkleOffset, 0)
+		_, err = io.ReadAtLeast(sstable.Data, toRead, len(toRead))
 		if err != nil {
 			return nil
 		}
 	}
 
-	sstable.merkle = merkletree.Deserialize(toRead)
+	sstable.Merkle = merkletree.Deserialize(toRead)
 	return nil
 }
