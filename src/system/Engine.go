@@ -5,13 +5,12 @@ import (
 	"fmt"
 	config2 "github.com/natasakasikovic/Key-Value-engine/src/config"
 	"github.com/natasakasikovic/Key-Value-engine/src/model"
-	countminsketch "github.com/natasakasikovic/Key-Value-engine/src/structs/CountMinSketch"
-	"github.com/natasakasikovic/Key-Value-engine/src/structs/HyperLogLog"
 	"github.com/natasakasikovic/Key-Value-engine/src/structs/LRUCache"
+	"github.com/natasakasikovic/Key-Value-engine/src/structs/TokenBucket"
 	"github.com/natasakasikovic/Key-Value-engine/src/structs/WAL"
-	"github.com/natasakasikovic/Key-Value-engine/src/structs/bloomFilter"
 	"github.com/natasakasikovic/Key-Value-engine/src/structs/memtable"
 	"github.com/natasakasikovic/Key-Value-engine/src/structs/sstable"
+	"log"
 	"os"
 	"strings"
 	"time"
@@ -22,14 +21,14 @@ const (
 	CMS_KEY = "countMinSketch"
 	HLL_KEY = "hyperLogLog"
 	SH_KEY  = "simhash"
+	TB_KEY  = "tokenBucket"
 )
 
 type Engine struct {
-	Wal            *WAL.WAL
-	Cache          *LRUCache.LRUCache
-	BloomFilter    *bloomFilter.BloomFilter
-	CountMinSketch *countminsketch.CMS
-	HyperLogLog    *HyperLogLog.HLL
+	Wal         *WAL.WAL
+	Cache       *LRUCache.LRUCache
+	TokenBucket *TokenBucket.TokenBucket
+	Config      *config2.Config
 }
 
 func NewEngine() (*Engine, error) {
@@ -38,7 +37,7 @@ func NewEngine() (*Engine, error) {
 	if err != nil {
 		return nil, err
 	}
-	wal, err := WAL.NewWAL(config.WalSize)
+	wal, err := WAL.NewWAL(config.WalSize, int32(config.MemtableSize))
 	if err != nil {
 		return nil, err
 	}
@@ -50,13 +49,17 @@ func NewEngine() (*Engine, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &Engine{Wal: wal, Cache: cache, BloomFilter: nil, CountMinSketch: nil, HyperLogLog: nil}, nil
+	tokenBucket := TokenBucket.NewTokenBucket(config.NumberOfTokens, int64(config.TokenResetInterval))
+	return &Engine{Wal: wal, Cache: cache, TokenBucket: tokenBucket, Config: config}, nil
 }
 
 // Get Checks Memtable, Cache, BloomFilter and SSTable for given key
 func (engine *Engine) Get(key string) ([]byte, error) {
-	if strings.HasPrefix(key, BF_KEY) || strings.HasPrefix(key, CMS_KEY) || strings.HasPrefix(key, HLL_KEY) || strings.HasPrefix(key, SH_KEY) {
+	if strings.HasPrefix(key, BF_KEY) || strings.HasPrefix(key, CMS_KEY) || strings.HasPrefix(key, HLL_KEY) || strings.HasPrefix(key, SH_KEY) || strings.HasPrefix(key, TB_KEY) {
 		return nil, errors.New("key must not begin with system prefix")
+	}
+	if !engine.TokenBucket.IsRequestAvailable() {
+		return nil, errors.New("wait until sending new request")
 	}
 	memtableRecord, err := memtable.Get(key)
 	if err == nil {
@@ -78,8 +81,11 @@ func (engine *Engine) Get(key string) ([]byte, error) {
 
 // Put Adds record to WAL and to Memtable with tombstone 0
 func (engine *Engine) Put(key string, value []byte) error {
-	if strings.HasPrefix(key, BF_KEY) || strings.HasPrefix(key, CMS_KEY) || strings.HasPrefix(key, HLL_KEY) || strings.HasPrefix(key, SH_KEY) {
+	if strings.HasPrefix(key, BF_KEY) || strings.HasPrefix(key, CMS_KEY) || strings.HasPrefix(key, HLL_KEY) || strings.HasPrefix(key, SH_KEY) || strings.HasPrefix(key, TB_KEY) {
 		return errors.New("key must not begin with system prefix")
+	}
+	if !engine.TokenBucket.IsRequestAvailable() {
+		return errors.New("wait until sending new request")
 	}
 	err := engine.Commit(key, value, 0)
 	if err != nil {
@@ -90,8 +96,11 @@ func (engine *Engine) Put(key string, value []byte) error {
 
 // Delete Adds record to WAL and to Memtable with tombstone 1
 func (engine *Engine) Delete(key string) error {
-	if strings.HasPrefix(key, BF_KEY) || strings.HasPrefix(key, CMS_KEY) || strings.HasPrefix(key, HLL_KEY) || strings.HasPrefix(key, SH_KEY) {
+	if strings.HasPrefix(key, BF_KEY) || strings.HasPrefix(key, CMS_KEY) || strings.HasPrefix(key, HLL_KEY) || strings.HasPrefix(key, SH_KEY) || strings.HasPrefix(key, TB_KEY) {
 		return errors.New("key must not begin with system prefix")
+	}
+	if !engine.TokenBucket.IsRequestAvailable() {
+		return errors.New("wait until sending new request")
 	}
 	err := engine.Commit(key, make([]byte, 0), 1)
 	if err != nil {
@@ -107,7 +116,22 @@ func (engine *Engine) Commit(key string, value []byte, tombstone byte) error {
 	if err != nil {
 		return err
 	}
-	memtable.Put(key, value, timestamp, tombstone)
+	didSwap, didFlush, records := memtable.Put(key, value, timestamp, tombstone)
+	if didSwap {
+		err = engine.Wal.UpdateWatermark(didFlush)
+		if err != nil {
+			log.Fatal(err)
+		}
+	}
+	if didFlush {
+		stable, err := sstable.CreateSStable(records, engine.Config.SSTableInSameFile, engine.Config.CompressionOn, int(engine.Config.IndexDegree), int(engine.Config.SummaryDegree))
+		if err != nil {
+			return err
+		}
+		//Sta raditi sa ovim
+		fmt.Println(stable)
+	}
+
 	//Ako je memtable pun prebaci na sledeci
 	//Ako su svi puni vrati sortirane stringove
 	//Dodaj u SSTable a MemTable isprazni
