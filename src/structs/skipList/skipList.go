@@ -107,7 +107,7 @@ func (skipList *SkipList) Delete(key string) {
 func (skipList *SkipList) Find(key string) (model.Record, error) {
 	found, _ := skipList.search(key)
 
-	if found == nil || found.val.Tombstone == 1 {
+	if found == nil {
 		return model.Record{}, errors.New("key not found")
 	}
 
