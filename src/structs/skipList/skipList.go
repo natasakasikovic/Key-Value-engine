@@ -9,35 +9,41 @@ import (
 	"github.com/natasakasikovic/Key-Value-engine/src/model"
 )
 
-const (
-	maxHeight = 16 // applied in the original skip list
-)
-
 type node struct {
 	key   string
 	val   model.Record
-	tower [maxHeight]*node // a collection of forwarded pointers linking the node to subsequent nodes on each corresponding level of the skip list
+	tower []*node // a collection of forwarded pointers linking the node to subsequent nodes on each corresponding level of the skip list
+}
+
+func newNode(key string, val model.Record, maxHeight int32) *node {
+	newNode := &node{}
+	newNode.key = key
+	newNode.val = val
+	newNode.tower = make([]*node, maxHeight)
+	return newNode
 }
 
 type SkipList struct {
 	head       *node // starting head node
 	height     int   // total number of levels that all nodes are currently occupying
 	numOfElems uint64
+	maxHeight  uint32
 }
 
-func NewSkipList() *SkipList {
+func NewSkipList(maxHeight uint32) *SkipList {
 	skipList := &SkipList{}
-	skipList.head = &node{}
+	skipList.head = newNode("", model.Record{}, int32(maxHeight))
 	skipList.height = 1
 	skipList.numOfElems = 0
+	skipList.maxHeight = maxHeight
 	return skipList
 }
 
 // search algoritham, returns requested node and track of the nodes that we pass through as we descend from level to level
-func (skipList *SkipList) search(key string) (*node, [maxHeight]*node) {
+func (skipList *SkipList) search(key string) (*node, []*node) {
 	var next *node
-	var journey [maxHeight]*node // store of the nodes along the search path, required for insertion and deletion
-
+	// store of the nodes along the search path, required for insertion and deletion
+	var journey []*node = make([]*node, skipList.maxHeight)
 	prev := skipList.head
 	// iteratie through the heights of the skip list, starting from the top and going down
 	for level := skipList.height - 1; level >= 0; level-- {
@@ -68,10 +74,10 @@ func (skipList *SkipList) Insert(key string, val model.Record) {
 		return
 	}
 
-	height := roll() //pseudo-random height (defines on how many levels to add new node)
+	height := roll(skipList.maxHeight) //pseudo-random height (defines on how many levels to add new node)
 
-	newNode := &node{key: key, val: val} // creating new node
-
+	// newNode := &node{key: key, val: val} // creating new node
+	newNode := newNode(key, val, int32(skipList.maxHeight))
 	// go through the skip list to the level where we insert a new node
 	for level := 0; level < height; level++ {
 		prev := journey[level] // to determine the node neighbors and splice the node with them
@@ -119,12 +125,12 @@ func (skipList *SkipList) IsFull(capacity uint64) bool {
 	return skipList.numOfElems >= capacity
 }
 
-func roll() int {
+func roll(maxHeight uint32) int {
 	level := 1
 	// possible ret values from rand are 0 and 1
 	// we stop when we get a 0
 	for ; rand.Int31n(2) == 1; level++ {
-		if level >= maxHeight {
+		if level >= int(maxHeight) {
 			return level
 		}
 	}
@@ -132,14 +138,14 @@ func roll() int {
 }
 
 func (skipList *SkipList) ClearData() {
-	skipList.head = &node{}
+	skipList.head = newNode("", model.Record{}, int32(skipList.maxHeight))
 	skipList.height = 1
 	skipList.numOfElems = 0
 }
 
 func (skipList *SkipList) PrintSkipList() {
 	fmt.Println("SkipList:")
-	for level := 16 - 1; level >= 0; level-- {
+	for level := int(skipList.maxHeight) - 1; level >= 0; level-- {
 		node := skipList.head
 		fmt.Printf("Level %d: ", level)
 		for node != nil {

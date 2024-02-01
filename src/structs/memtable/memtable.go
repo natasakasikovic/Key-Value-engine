@@ -41,14 +41,14 @@ func NewMemtable(data DataStructure, capacity uint64) *Memtable {
 		capacity: capacity,
 	}
 }
-func InitMemtables(memtable_size uint64, memtable_structure string, num_of_instances uint64, b_tree_order uint32) {
+func InitMemtables(memtable_size uint64, memtable_structure string, num_of_instances uint64, b_tree_order, sl_max_height uint32) {
 	Memtables.collection = make([]*Memtable, num_of_instances)
 	Memtables.size = uint(num_of_instances)
 
 	switch memtable_structure {
 	case "skipList":
 		for i := 0; i < int(num_of_instances); i++ {
-			Memtables.collection[i] = NewMemtable(skiplist.NewSkipList(), memtable_size)
+			Memtables.collection[i] = NewMemtable(skiplist.NewSkipList(sl_max_height), memtable_size)
 		}
 	case "bTree":
 		for i := 0; i < int(num_of_instances); i++ {
