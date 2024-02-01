@@ -6,7 +6,7 @@ import (
 
 // serializes hash map
 // for each key-value pair saves length of the key, key, length of the value, value.
-func Serialize(hashmap map[string]string) []byte {
+func Serialize(hashmap map[string]uint64) []byte {
 	var data []byte
 
 	for key, value := range hashmap {
@@ -16,18 +16,17 @@ func Serialize(hashmap map[string]string) []byte {
 
 		data = append(data, []byte(key)...)
 
-		valueLength := make([]byte, 8)
-		binary.BigEndian.PutUint64(valueLength, uint64(len(value)))
-		data = append(data, valueLength...)
+		valueBuffer := make([]byte, 8)
+		binary.BigEndian.PutUint64(valueBuffer, value)
+		data = append(data, valueBuffer...)
 
-		data = append(data, []byte(value)...)
 	}
 	return data
 }
 
 // reconstructs a hash map from a serialized byte slice
-func Deserialize(data []byte) map[string]string {
-	hashmap := make(map[string]string)
+func Deserialize(data []byte) map[string]uint64 {
+	hashmap := make(map[string]uint64)
 	for len(data) > 0 {
 		keyLength := binary.BigEndian.Uint64(data[:8])
 		data = data[8:]
@@ -35,13 +34,8 @@ func Deserialize(data []byte) map[string]string {
 		key := string(data[:keyLength])
 		data = data[keyLength:]
 
-		valueLength := binary.BigEndian.Uint64(data[:8])
+		hashmap[key] = binary.BigEndian.Uint64(data[:8])
 		data = data[8:]
-
-		value := string(data[:valueLength])
-		data = data[valueLength:]
-
-		hashmap[key] = value
 	}
 
 	return hashmap
