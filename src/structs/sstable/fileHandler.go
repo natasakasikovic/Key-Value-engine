@@ -381,7 +381,11 @@ func (sstable *SSTable) writeToSingleFile(records []*model.Record, n int, m int)
 	content = append(content, contentMerkle...)
 
 	sstable.writeToFile(sstable.Data, content)
-
+	sstable.DataOffset = int64(dataOffset)
+	sstable.SummaryOffset = int64(summaryOffset)
+	sstable.BfOffset = int64(bfOffset)
+	sstable.MerkleOffset = int64(merkleOffset)
+	sstable.IndexOffset = int64(indexOffset)
 }
 
 // params: n - index degree, m - summary degree
