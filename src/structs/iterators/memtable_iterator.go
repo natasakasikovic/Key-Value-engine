@@ -41,3 +41,6 @@ func (iter *MemtableIterator) Next() (*model.Record, error) {
 	}
 	return nil, nil
 }
+
+func (iter *MemtableIterator) Stop() {
+}
