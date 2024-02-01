@@ -14,12 +14,16 @@ type Config struct {
 	SkipListMaxHeight    uint32 `json:"skip_list_max_height"`
 	BTreeOrder           uint32 `json:"b_tree_order"`
 	LRUCacheMaxSize      uint32 `json:"lru_cache_max_size"`
-	IndexSummaryDegree   uint32 `json:"index_summary_degree"`
+	IndexDegree          uint32 `json:"index_degree"`
+	SummaryDegree        uint32 `json:"summary_degree"`
 	SSTableInSameFile    bool   `json:"ss_table_in_same_file"`
 	CompressionOn        bool   `json:"compression_on"`
 	LSMTreeMaxDepth      uint32 `json:"lsm_tree_max_depth"`
 	NumberOfTokens       uint32 `json:"number_of_tokens"`
 	TokenResetInterval   uint32 `json:"token_reset_interval"`
+	LSMFirstLevelSize    uint32 `json:"LSMFirstLevelSize"`
+	LSMGrowthFactor      uint32 `json:"LSMGrowthFactor"`
+	LSMCompactionType    string `json:"LSMCompactionType"`
 }
 
 func LoadConfig(filename string) (*Config, error) {
@@ -35,12 +39,16 @@ func LoadConfig(filename string) (*Config, error) {
 		SkipListMaxHeight:    3,
 		BTreeOrder:           3,
 		LRUCacheMaxSize:      5,
-		IndexSummaryDegree:   5,
+		IndexDegree:          5,
+		SummaryDegree:        5,
 		SSTableInSameFile:    false,
 		CompressionOn:        false,
 		LSMTreeMaxDepth:      7,
 		NumberOfTokens:       10,
 		TokenResetInterval:   60,
+		LSMFirstLevelSize:    10,
+		LSMGrowthFactor:      10,
+		LSMCompactionType:    "sizetiered",
 	}
 	err = json.Unmarshal(data, &config)
 	if err != nil {
