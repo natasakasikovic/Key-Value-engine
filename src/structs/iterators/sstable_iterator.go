@@ -40,6 +40,11 @@ func getDataOffsets(table *sstable.SSTable) (int64, int64, error) {
 
 	if !oneFile {
 		//IF THE SSTABLE IS IN SEPERATE FILES
+		table.Data, err = os.Open(table.Data.Name())
+		if err != nil {
+			return 0, 0, err
+		}
+
 		fileLen, err := table.Data.Seek(0, io.SeekEnd)
 		return table.DataOffset, fileLen, err
 	} else {
@@ -54,15 +59,22 @@ func getDataOffsets(table *sstable.SSTable) (int64, int64, error) {
 func NewSSTableIterator(table *sstable.SSTable) (*SSTableIterator, error) {
 	var iterator *SSTableIterator = &SSTableIterator{}
 	var err error
-	iterator.data, err = os.Open(table.Data.Name())
-	if err != nil {
-		return nil, err
-	}
 
 	iterator.current_offset, iterator.end_offset, err = getDataOffsets(table)
 	if err != nil {
 		return nil, err
 	}
+
+	iterator.data, err = os.Open(table.Data.Name())
+	if err != nil {
+		return nil, err
+	}
+
+	_, err = iterator.data.Seek(iterator.current_offset, io.SeekStart)
+	if err != nil {
+		return nil, err
+	}
+
 	return iterator, nil
 }
 
