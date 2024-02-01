@@ -32,8 +32,8 @@ func (hashMap *HashMap) Delete(key string) {
 }
 
 func (hashMap *HashMap) Find(key string) (model.Record, error) {
-	record, exists := hashMap.data[key]
-	if exists && record.Tombstone == 0 {
+	_, exists := hashMap.data[key]
+	if exists {
 		return *hashMap.data[key], nil
 	}
 	return model.Record{}, errors.New("record not found")

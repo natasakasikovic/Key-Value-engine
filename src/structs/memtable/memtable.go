@@ -85,9 +85,13 @@ func findAndDelete(key string) bool {
 	return false
 }
 
-func Put(key string, value []byte, timestamp uint64, tombstone byte) {
+func Put(key string, value []byte, timestamp uint64, tombstone byte) (bool, bool, []*model.Record) {
+	flushed := false
+	switchedMemtable := false
+	var recordsToFlush []*model.Record
+
 	if tombstone == 1 && findAndDelete(key) {
-		return
+		return flushed, switchedMemtable, recordsToFlush
 	}
 
 	memtable := Memtables.collection[Memtables.current] //current memtable
@@ -96,9 +100,11 @@ func Put(key string, value []byte, timestamp uint64, tombstone byte) {
 		if Memtables.current == Memtables.size-1 { //if current memtable is full and is last
 			//do flush
 			Memtables.current = Memtables.flush
-			Memtables.collection[Memtables.flush].flushToSSTable()
+			recordsToFlush = Memtables.collection[Memtables.flush].getRecordsToFlush()
+			flushed = true
 			//empty memtable
 			memtable = Memtables.collection[Memtables.flush]
+			switchedMemtable = true
 			if Memtables.flush == Memtables.size-1 { //when flushed memtable is last in collection, next for flush is memtable at position 0
 				Memtables.flush = 0
 			} else {
@@ -108,9 +114,11 @@ func Put(key string, value []byte, timestamp uint64, tombstone byte) {
 			memtable.Keys = nil
 		} else {
 			Memtables.current += 1
+			switchedMemtable = true
 			memtable = Memtables.collection[Memtables.current]
 			if memtable.data.IsFull(memtable.capacity) { //If there is data, flush it; we don't want to overwrite it
-				memtable.flushToSSTable()
+				recordsToFlush = memtable.getRecordsToFlush()
+				flushed = true
 				if Memtables.flush == Memtables.size-1 { //when flushed memtable is last in collection, next for flush is memtable at position 0
 					Memtables.flush = 0
 				} else {
@@ -126,10 +134,13 @@ func Put(key string, value []byte, timestamp uint64, tombstone byte) {
 		Value:     value,
 		Tombstone: tombstone,
 		Timestamp: timestamp,
+		Key:       key,
 	}
 	//put data to memtable
 	memtable.data.Insert(key, memValue)
 	memtable.Keys = append(memtable.Keys, key)
+
+	return switchedMemtable, flushed, recordsToFlush
 
 }
 
@@ -143,7 +154,7 @@ func Get(key string) (model.Record, error) {
 	return model.Record{}, errors.New("record not found")
 }
 
-func (memtable *Memtable) flushToSSTable() {
+func (memtable *Memtable) getRecordsToFlush() []*model.Record {
 	var records []*model.Record
 	sort.Strings(memtable.Keys)
 	for _, key := range memtable.Keys {
@@ -152,5 +163,5 @@ func (memtable *Memtable) flushToSSTable() {
 			records = append(records, &record)
 		}
 	}
-	// CreateSStable(records,singleFile, compressionOn, indexDegree, summaryDegree) //uncomment this line and call CreateSStable when merge sstable branch to develop
+	return records
 }

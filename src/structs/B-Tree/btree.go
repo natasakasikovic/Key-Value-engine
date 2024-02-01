@@ -96,7 +96,7 @@ func (btree *BTree) SearchRef(key string) *model.Record {
 // If the key isn't found, an error is returned.
 func (btree *BTree) Find(key string) (model.Record, error) {
 	var ref *model.Record = btree.SearchRef(key)
-	if ref == nil || ref.Tombstone == 1 {
+	if ref == nil {
 		return model.Record{}, errors.New("key not found")
 	} else {
 		return *ref, nil
@@ -232,7 +232,6 @@ func (btree *BTree) Delete(key string) {
 }
 
 func (btree *BTree) ClearData() {
-	btree.root = nil
 	btree.height = 0
 }
 
