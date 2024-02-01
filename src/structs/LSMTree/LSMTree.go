@@ -207,7 +207,7 @@ func mergeSSTables(sstableArray []*sstable.SSTable, conf config.Config) (*sstabl
 
 		var err error
 		if sstableArray[i].DataOffset == 0 {
-			fileOffsetLimits[i], err = utils.GetFileLength(sstableArray[i].Data)
+			fileOffsetLimits[i], err = sstableArray[i].Data.Seek(0, io.SeekEnd)
 			if err != nil {
 				return nil, err
 			}
@@ -524,10 +524,11 @@ func uintPow(x, y uint32) uint32 {
 func (tree *LSMTree) getCapacityOfLevel(levelIndex uint32) uint32 {
 	//TODO: Update with config values
 	if tree.compactionType == "leveled" {
-		return uintPow(5, levelIndex)
+		//TODO: WRONG
+		return uintPow(2, levelIndex)
 	}
 	//TODO: DUMB MAGIC NUMBER
-	return 5
+	return 2
 }
 
 func (tree *LSMTree) checkLevel(levelIndex uint32) {
@@ -536,7 +537,7 @@ func (tree *LSMTree) checkLevel(levelIndex uint32) {
 		return
 	}
 
-	if len(tree.sstableArrays[levelIndex]) >= int(tree.getCapacityOfLevel(levelIndex)) {
+	if len(tree.sstableArrays[levelIndex]) > int(tree.getCapacityOfLevel(levelIndex)) {
 		tree.compact(levelIndex)
 		tree.checkLevel(levelIndex + 1)
 	}
