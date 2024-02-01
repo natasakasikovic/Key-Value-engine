@@ -22,11 +22,11 @@ var Memtables = struct {
 	size       uint
 	current    uint
 	flush      uint
-	collection []*Memtable
-}{size: 0, current: 0, flush: 0, collection: nil}
+	Collection []*Memtable
+}{size: 0, current: 0, flush: 0, Collection: nil}
 
 type Memtable struct {
-	data     DataStructure
+	Data     DataStructure
 	capacity uint64
 	Keys     []string
 }
@@ -37,46 +37,46 @@ func NewMemtable(data DataStructure, capacity uint64) *Memtable {
 	}
 
 	return &Memtable{
-		data:     data,
+		Data:     data,
 		capacity: capacity,
 	}
 }
-func InitMemtables(memtable_size uint64, memtable_structure string, num_of_instances uint64, b_tree_order uint32) {
-	Memtables.collection = make([]*Memtable, num_of_instances)
+func InitMemtables(memtable_size uint64, memtable_structure string, num_of_instances uint64, b_tree_order, sl_max_height uint32) {
+	Memtables.Collection = make([]*Memtable, num_of_instances)
 	Memtables.size = uint(num_of_instances)
 
 	switch memtable_structure {
 	case "skipList":
 		for i := 0; i < int(num_of_instances); i++ {
-			Memtables.collection[i] = NewMemtable(skiplist.NewSkipList(), memtable_size)
+			Memtables.Collection[i] = NewMemtable(skiplist.NewSkipList(sl_max_height), memtable_size)
 		}
 	case "bTree":
 		for i := 0; i < int(num_of_instances); i++ {
-			Memtables.collection[i] = NewMemtable(bTree.NewBTree(int(b_tree_order)), memtable_size)
+			Memtables.Collection[i] = NewMemtable(bTree.NewBTree(int(b_tree_order)), memtable_size)
 		}
 	case "hashMap":
 		for i := 0; i < int(num_of_instances); i++ {
-			Memtables.collection[i] = NewMemtable(hashMap.NewHashMap(), memtable_size)
+			Memtables.Collection[i] = NewMemtable(hashMap.NewHashMap(), memtable_size)
 		}
 	default:
 		for i := 0; i < int(num_of_instances); i++ {
-			Memtables.collection[i] = NewMemtable(hashMap.NewHashMap(), memtable_size)
+			Memtables.Collection[i] = NewMemtable(hashMap.NewHashMap(), memtable_size)
 		}
 	}
 
 }
 
 func (memtable *Memtable) delete(key string) {
-	memtable.data.Delete(key)
+	memtable.Data.Delete(key)
 }
 
 func find(key string) (model.Record, error) {
-	return Memtables.collection[Memtables.current].data.Find(key)
+	return Memtables.Collection[Memtables.current].Data.Find(key)
 }
 
 func findAndDelete(key string) bool {
-	for _, memtable := range Memtables.collection {
-		_, err := memtable.data.Find(key)
+	for _, memtable := range Memtables.Collection {
+		_, err := memtable.Data.Find(key)
 		if err == nil {
 			memtable.delete(key)
 			return true
@@ -94,29 +94,29 @@ func Put(key string, value []byte, timestamp uint64, tombstone byte) (bool, bool
 		return flushed, switchedMemtable, recordsToFlush
 	}
 
-	memtable := Memtables.collection[Memtables.current] //current memtable
+	memtable := Memtables.Collection[Memtables.current] //current memtable
 
-	if memtable.data.IsFull(memtable.capacity) {
+	if memtable.Data.IsFull(memtable.capacity) {
 		if Memtables.current == Memtables.size-1 { //if current memtable is full and is last
 			//do flush
 			Memtables.current = Memtables.flush
-			recordsToFlush = Memtables.collection[Memtables.flush].getRecordsToFlush()
+			recordsToFlush = Memtables.Collection[Memtables.flush].getRecordsToFlush()
 			flushed = true
 			//empty memtable
-			memtable = Memtables.collection[Memtables.flush]
+			memtable = Memtables.Collection[Memtables.flush]
 			switchedMemtable = true
 			if Memtables.flush == Memtables.size-1 { //when flushed memtable is last in collection, next for flush is memtable at position 0
 				Memtables.flush = 0
 			} else {
 				Memtables.flush += 1
 			}
-			memtable.data.ClearData()
+			memtable.Data.ClearData()
 			memtable.Keys = nil
 		} else {
 			Memtables.current += 1
 			switchedMemtable = true
-			memtable = Memtables.collection[Memtables.current]
-			if memtable.data.IsFull(memtable.capacity) { //If there is data, flush it; we don't want to overwrite it
+			memtable = Memtables.Collection[Memtables.current]
+			if memtable.Data.IsFull(memtable.capacity) { //If there is data, flush it; we don't want to overwrite it
 				recordsToFlush = memtable.getRecordsToFlush()
 				flushed = true
 				if Memtables.flush == Memtables.size-1 { //when flushed memtable is last in collection, next for flush is memtable at position 0
@@ -124,7 +124,7 @@ func Put(key string, value []byte, timestamp uint64, tombstone byte) (bool, bool
 				} else {
 					Memtables.flush += 1
 				}
-				memtable.data.ClearData()
+				memtable.Data.ClearData()
 				memtable.Keys = nil
 			}
 		}
@@ -137,7 +137,7 @@ func Put(key string, value []byte, timestamp uint64, tombstone byte) (bool, bool
 		Key:       key,
 	}
 	//put data to memtable
-	memtable.data.Insert(key, memValue)
+	memtable.Data.Insert(key, memValue)
 	memtable.Keys = append(memtable.Keys, key)
 
 	return switchedMemtable, flushed, recordsToFlush
@@ -145,8 +145,8 @@ func Put(key string, value []byte, timestamp uint64, tombstone byte) (bool, bool
 }
 
 func Get(key string) (model.Record, error) {
-	for _, memtable := range Memtables.collection {
-		record, err := memtable.data.Find(key)
+	for _, memtable := range Memtables.Collection {
+		record, err := memtable.Data.Find(key)
 		if err == nil {
 			return record, nil
 		}
