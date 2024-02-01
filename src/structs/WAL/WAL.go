@@ -4,6 +4,7 @@ import (
 	"encoding/binary"
 	"fmt"
 	"github.com/natasakasikovic/Key-Value-engine/src/model"
+	"github.com/natasakasikovic/Key-Value-engine/src/utils"
 	"io"
 	"log"
 	"os"
@@ -30,57 +31,75 @@ const (
 )
 
 type WAL struct {
-	maxBytesPerFile      uint32
-	currentFile          *os.File
-	segmentNames         []string
-	lowWaterMark         int32
-	bytesFromLastSegment int64
+	maxBytesPerFile              uint32
+	currentFile                  *os.File
+	segmentNames                 []string
+	lowWaterMark                 int32
+	bytesFromLastSegment         int64
+	numOfMemtables               int32
+	currentMemtable              int32
+	memtableLowWatermark         []int32
+	memtableBytesFromLastSegment []int64
 }
 
-func getBytesFromLastSegmentFromFile() (int64, int32, error) {
+func getBytesFromLastSegmentFromFile(numOfMemtables int32) (int64, int32, []int64, []int32, int32, error) {
 	path := fmt.Sprintf("src%cstructs%cWAL%cbytesFromLastSegment.log", os.PathSeparator, os.PathSeparator, os.PathSeparator)
 
 	file, err := os.Open(path)
 	if os.IsNotExist(err) {
 		file, err = os.Create(path)
 		if err != nil {
-			return -1, -1, err
+			return -1, -1, nil, nil, -1, err
 		}
 	} else if err != nil {
-		return -1, -1, err
+		return -1, -1, nil, nil, -1, err
 	}
 
 	defer file.Close()
-	fileLength, err := getFileLength(file)
+	fileLength, err := utils.GetFileLength(file)
 	if err != nil {
-		return -1, -1, err
+		return -1, -1, nil, nil, -1, err
 	}
 	if fileLength == 0 {
-		return 0, 0, nil
+		return 0, 1, make([]int64, 5), make([]int32, 5), 0, err
 	}
-	buf := make([]byte, 12)
+	size := numOfMemtables*(4+8) + 4
+	buf := make([]byte, size)
 	_, err = file.Read(buf)
 	if err != nil {
-		return -1, -1, err
+		return -1, -1, nil, nil, -1, err
 	}
+	memtableBytesFromLastSegment := make([]int64, numOfMemtables)
+	memtableLowWatermark := make([]int32, numOfMemtables)
+	for i := int32(0); i < numOfMemtables; i++ {
+		memtableBytesFromLastSegment[i] = int64(binary.LittleEndian.Uint64(buf[i*8 : i*8+8]))
+	}
+	for i := int32(0); i < numOfMemtables; i++ {
+		memtableLowWatermark[i] = int32(binary.LittleEndian.Uint32(buf[numOfMemtables*8+i*4 : numOfMemtables*8+i*4+4]))
+	}
+	currentMemtable := int32(binary.LittleEndian.Uint32(buf[(8+4)*numOfMemtables : (8+4)*numOfMemtables+4]))
 
-	value := int64(binary.LittleEndian.Uint64(buf[:8]))
-	watermark := int32(binary.LittleEndian.Uint32(buf[8:12]))
-
-	return value, watermark, nil
+	bytesFromLastSegment := memtableBytesFromLastSegment[currentMemtable]
+	lowWaterMark := memtableLowWatermark[currentMemtable]
+	return bytesFromLastSegment, lowWaterMark, memtableBytesFromLastSegment, memtableLowWatermark, currentMemtable, nil
 }
-func setBytesFromLastSegmentFromFile(value int64, watermark int32) error {
+func (wal *WAL) SetBytesFromLastSegmentFromFile() error {
 	path := fmt.Sprintf("src%cstructs%cWAL%cbytesFromLastSegment.log", os.PathSeparator, os.PathSeparator, os.PathSeparator)
 	file, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE, 0644)
 	if err != nil {
 		return err
 	}
 	defer file.Close()
+	size := wal.numOfMemtables*(4+8) + 4
+	buf := make([]byte, size)
+	for i := int32(0); i < wal.numOfMemtables; i++ {
+		binary.LittleEndian.PutUint64(buf[i*8:i*8+8], uint64(wal.memtableBytesFromLastSegment[i]))
+	}
+	for i := int32(0); i < wal.numOfMemtables; i++ {
+		binary.LittleEndian.PutUint32(buf[wal.numOfMemtables*8+i*4:wal.numOfMemtables*8+i*4+4], uint32(wal.memtableLowWatermark[i]))
+	}
+	binary.LittleEndian.PutUint32(buf[(8+4)*wal.numOfMemtables:(8+4)*wal.numOfMemtables+4], uint32(wal.currentMemtable))
 
-	// Convert int64 to byte slice
-	buf := make([]byte, 12)
-	binary.LittleEndian.PutUint64(buf[:8], uint64(value))
-	binary.LittleEndian.PutUint32(buf[8:12], uint32(watermark))
 	// Write the byte slice to the file
 	_, err = file.Write(buf)
 	if err != nil {
@@ -89,7 +108,7 @@ func setBytesFromLastSegmentFromFile(value int64, watermark int32) error {
 
 	return nil
 }
-func NewWAL(maxBytesPerFile uint32) (*WAL, error) {
+func NewWAL(maxBytesPerFile uint32, numOfMemtables int32) (*WAL, error) {
 
 	files, err := os.ReadDir("data/log")
 	if os.IsNotExist(err) {
@@ -117,16 +136,20 @@ func NewWAL(maxBytesPerFile uint32) (*WAL, error) {
 		fmt.Println(path, err)
 		return nil, err
 	}
-	bytesFromLastSegment, watermark, err := getBytesFromLastSegmentFromFile()
+	bytesFromLastSegment, watermark, mBytesFromLastSegment, mWatermark, currentMemtable, err := getBytesFromLastSegmentFromFile(numOfMemtables)
 	if err != nil {
 		return nil, err
 	}
 	return &WAL{
-		maxBytesPerFile:      maxBytesPerFile,
-		currentFile:          currentFile,
-		segmentNames:         list,
-		lowWaterMark:         watermark,
-		bytesFromLastSegment: bytesFromLastSegment}, nil
+		maxBytesPerFile:              maxBytesPerFile,
+		currentFile:                  currentFile,
+		segmentNames:                 list,
+		lowWaterMark:                 watermark,
+		numOfMemtables:               numOfMemtables,
+		bytesFromLastSegment:         bytesFromLastSegment,
+		memtableBytesFromLastSegment: mBytesFromLastSegment,
+		memtableLowWatermark:         mWatermark,
+		currentMemtable:              currentMemtable}, nil
 }
 func (wal *WAL) Commit(key string, value []byte, tombstone byte) {
 	err := wal.Append(model.NewRecord(tombstone, key, value))
@@ -136,7 +159,7 @@ func (wal *WAL) Commit(key string, value []byte, tombstone byte) {
 }
 func (wal *WAL) Append(r *model.Record) error {
 	data := r.RecordToBytes()
-	fileLength, err := getFileLength(wal.currentFile)
+	fileLength, err := utils.GetFileLength(wal.currentFile)
 	if err != nil {
 		return err
 	}
@@ -233,7 +256,7 @@ func (wal *WAL) ReadRecords() error {
 				keySize := binary.BigEndian.Uint64(data[KEY_SIZE_START : KEY_SIZE_START+KEY_SIZE_SIZE])
 				valueSize := binary.BigEndian.Uint64(data[VALUE_SIZE_START : VALUE_SIZE_START+VALUE_SIZE_SIZE])
 				//Sad kad znamo celu duzinu ako je ostalo vise bajtova nego duzina recorda opet otvaraj novi
-				if uint64(bytesLeft) <= 29+keySize+valueSize+1 && i != len(wal.segmentNames)-1 {
+				if uint64(bytesLeft) <= 29+keySize+valueSize+2 && i != len(wal.segmentNames)-1 {
 					bytesToTransfer = make([]byte, bytesLeft)
 					copy(bytesToTransfer, data[offset:])
 					if err != nil {
@@ -283,7 +306,8 @@ func (wal *WAL) ClearLog() error {
 		newSegmentNames[i-wal.lowWaterMark+1] = newName
 	}
 	wal.lowWaterMark = 1
-	err = setBytesFromLastSegmentFromFile(wal.bytesFromLastSegment, wal.lowWaterMark)
+	wal.memtableLowWatermark[wal.currentMemtable] = 1
+	err = wal.SetBytesFromLastSegmentFromFile()
 	if err != nil {
 		return err
 	}
@@ -294,24 +318,22 @@ func (wal *WAL) ClearLog() error {
 	return nil
 }
 
-func (wal *WAL) UpdateWatermark() error {
-	wal.lowWaterMark = int32(len(wal.segmentNames))
-	fileLength, err := getFileLength(wal.currentFile)
+func (wal *WAL) UpdateWatermark(didFlush bool) error {
+	wal.memtableLowWatermark[wal.currentMemtable] = int32(len(wal.segmentNames))
+	fileLength, err := utils.GetFileLength(wal.currentFile)
 	if err != nil {
 		return err
 	}
-	wal.bytesFromLastSegment = fileLength
-	err = setBytesFromLastSegmentFromFile(fileLength, wal.lowWaterMark)
+	wal.memtableBytesFromLastSegment[wal.currentMemtable] = fileLength
+
+	if didFlush {
+		wal.lowWaterMark = wal.memtableLowWatermark[wal.currentMemtable]
+		wal.bytesFromLastSegment = wal.memtableBytesFromLastSegment[wal.currentMemtable]
+	}
+	wal.currentMemtable = (wal.currentMemtable + 1) % wal.numOfMemtables
+	err = wal.SetBytesFromLastSegmentFromFile()
 	if err != nil {
 		return err
 	}
 	return nil
-}
-
-func getFileLength(f *os.File) (int64, error) {
-	fi, err := f.Stat()
-	if err != nil {
-		return 0, err
-	}
-	return fi.Size(), nil
 }
