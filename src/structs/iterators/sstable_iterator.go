@@ -169,3 +169,7 @@ func (iter *SSTableIterator) Next() (*model.Record, error) {
 
 	return nil, nil
 }
+
+func (iter *SSTableIterator) Stop() {
+	iter.data.Close()
+}
