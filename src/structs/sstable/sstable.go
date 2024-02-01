@@ -18,11 +18,11 @@ const (
 )
 
 type SSTable struct {
-	data, index, summary                                           *os.File
-	bf                                                             *bloomFilter.BloomFilter
-	merkle                                                         *merkletree.MerkleTree
-	minKey, maxKey, name                                           string
-	dataOffset, indexOffset, summaryOffset, merkleOffset, bfOffset int64
+	Data, Index, Summary                                           *os.File
+	Bf                                                             *bloomFilter.BloomFilter
+	Merkle                                                         *merkletree.MerkleTree
+	MinKey, MaxKey, Name                                           string
+	DataOffset, IndexOffset, SummaryOffset, MerkleOffset, BfOffset int64
 }
 
 // function that creates a new sstable
@@ -51,19 +51,19 @@ func CreateSStable(records []*model.Record, singleFile, compressionOn bool, inde
 	if err != nil {
 		return nil, err
 	}
-	sstable.name = dirNames[len(dirNames)-1]
+	sstable.Name = dirNames[len(dirNames)-1]
 
 	if compressionOn {
 		// TODO: implement compression
 	}
 
-	sstable.bf = bloomFilter.NewBf(len(records), 0.001)
+	sstable.Bf = bloomFilter.NewBf(len(records), 0.001)
 	for _, record := range records {
-		sstable.bf.Insert(record.Key)
+		sstable.Bf.Insert(record.Key)
 	}
-	sstable.minKey = records[0].Key
-	sstable.maxKey = records[len(records)-1].Key
-	sstable.merkle, _ = merkletree.NewTree(sstable.serializeData(records))
+	sstable.MinKey = records[0].Key
+	sstable.MaxKey = records[len(records)-1].Key
+	sstable.Merkle, _ = merkletree.NewTree(sstable.serializeData(records))
 
 	if singleFile {
 		err = sstable.makeSingleFile(path, records, indexDegree, summaryDegree)
@@ -104,13 +104,13 @@ func Search(key string) (*model.Record, error) {
 		if err != nil {
 			return nil, err
 		}
-		sstable.name = dirName
+		sstable.Name = dirName
 
 		sstable.loadBF(len(content) != 1, dirName)
-		if !sstable.bf.Find(key) { // then record is not in this sstable, go to next
+		if !sstable.Bf.Find(key) { // then record is not in this sstable, go to next
 			continue
 		}
-		if key < sstable.minKey || key > sstable.maxKey {
+		if key < sstable.MinKey || key > sstable.MaxKey {
 			continue
 		}
 
@@ -143,9 +143,9 @@ func Search(key string) (*model.Record, error) {
 // deletes sstable folder, returns error if it occured during deletion
 func (sstable *SSTable) Delete() error {
 
-	sstable.data.Close()
-	sstable.summary.Close()
-	sstable.index.Close()
+	sstable.Data.Close()
+	sstable.Summary.Close()
+	sstable.Index.Close()
 	dirContent, err := utils.GetDirContent(PATH) // dirContent - names of all sstables dirs
 	if err != nil {
 		return err
@@ -153,14 +153,14 @@ func (sstable *SSTable) Delete() error {
 
 	i := 0
 	for i < len(dirContent) {
-		if dirContent[i] == sstable.name {
+		if dirContent[i] == sstable.Name {
 			break
 		}
 		i++
 	}
 
 	// remove content of sstable
-	sstableFolder, err := utils.GetDirContent(fmt.Sprintf("%s/%s", PATH, sstable.name)) // dirContent - names of all sstables dirs
+	sstableFolder, err := utils.GetDirContent(fmt.Sprintf("%s/%s", PATH, sstable.Name)) // dirContent - names of all sstables dirs
 	for j := 0; j < len(sstableFolder); j++ {
 		err = os.Remove(fmt.Sprintf("%s/%s/%s", PATH, dirContent[i], sstableFolder[j]))
 		if err != nil {
