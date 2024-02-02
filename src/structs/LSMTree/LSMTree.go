@@ -336,7 +336,7 @@ func mergeSSTables(sstableArray []*sstable.SSTable, conf config.Config) (*sstabl
 	}
 	//TODO
 	//Complete when config gets updated
-	newSSTable, err := sstable.CreateSStable(newRecords, conf.SSTableInSameFile, conf.CompressionOn, int(conf.IndexSummaryDegree), int(conf.IndexSummaryDegree))
+	newSSTable, err := sstable.CreateSStable(newRecords, conf.SSTableInSameFile, conf.CompressionOn, int(conf.IndexDegree), int(conf.SummaryDegree))
 
 	if err != nil {
 		return nil, err

@@ -4,6 +4,7 @@ import (
 	"encoding/binary"
 	"fmt"
 	"github.com/natasakasikovic/Key-Value-engine/src/model"
+	"github.com/natasakasikovic/Key-Value-engine/src/structs/memtable"
 	"github.com/natasakasikovic/Key-Value-engine/src/utils"
 	"io"
 	"log"
@@ -269,7 +270,14 @@ func (wal *WAL) ReadRecords() error {
 						return err
 					}
 					//Read records 1 by 1
-					//memtable.Put(record.key, record.value, record.timestamp, record.tombstone)
+					//IF THERE IS ENOUGH TO FLUSH IT WOULD'VE BEEN FLUSHED EARLIER
+					didSwap, _, _ := memtable.Put(record.Key, record.Value, record.Timestamp, record.Tombstone)
+					if didSwap {
+						err := wal.UpdateWatermark(false)
+						if err != nil {
+							return err
+						}
+					}
 					fmt.Println(record)
 
 					offset += bytesRead

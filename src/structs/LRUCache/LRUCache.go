@@ -3,6 +3,7 @@ package LRUCache
 import (
 	"container/list"
 	"fmt"
+	"github.com/natasakasikovic/Key-Value-engine/src/model"
 	"github.com/natasakasikovic/Key-Value-engine/src/structs/memtable"
 )
 
@@ -48,13 +49,12 @@ func (lru *LRUCache) Get(key string) []byte {
 	return elem.Value.(*Data).value
 }
 
-func (lru *LRUCache) UpdateKeys(mt *memtable.Memtable) {
-	for i := 0; i < len(mt.Keys); i++ {
-		elem, exists := lru.hashMap[mt.Keys[i]]
+func (lru *LRUCache) UpdateKeys(records []*model.Record) {
+	for i := 0; i < len(records); i++ {
+		elem, exists := lru.hashMap[records[i].Key]
 		if exists {
-			record, _ := memtable.Get(mt.Keys[i])
-			value := record.Value
-			elem.Value.(*Data).value = value
+			record, _ := memtable.Get(records[i].Key)
+			elem.Value.(*Data).value = record.Value
 		}
 	}
 }
