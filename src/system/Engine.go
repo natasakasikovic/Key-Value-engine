@@ -6,6 +6,7 @@ import (
 	config2 "github.com/natasakasikovic/Key-Value-engine/src/config"
 	"github.com/natasakasikovic/Key-Value-engine/src/model"
 	"github.com/natasakasikovic/Key-Value-engine/src/structs/LRUCache"
+	lsmtree "github.com/natasakasikovic/Key-Value-engine/src/structs/LSMTree"
 	"github.com/natasakasikovic/Key-Value-engine/src/structs/TokenBucket"
 	"github.com/natasakasikovic/Key-Value-engine/src/structs/WAL"
 	"github.com/natasakasikovic/Key-Value-engine/src/structs/memtable"
@@ -29,6 +30,7 @@ type Engine struct {
 	Cache       *LRUCache.LRUCache
 	TokenBucket *TokenBucket.TokenBucket
 	Config      *config2.Config
+	LSMTree     *lsmtree.LSMTree
 }
 
 func NewEngine() (*Engine, error) {
@@ -50,7 +52,8 @@ func NewEngine() (*Engine, error) {
 		return nil, err
 	}
 	tokenBucket := TokenBucket.NewTokenBucket(config.NumberOfTokens, int64(config.TokenResetInterval))
-	return &Engine{Wal: wal, Cache: cache, TokenBucket: tokenBucket, Config: config}, nil
+	lsmTree := lsmtree.NewLSMTree(config)
+	return &Engine{Wal: wal, Cache: cache, TokenBucket: tokenBucket, Config: config, LSMTree: &lsmTree}, nil
 }
 
 // Get Checks Memtable, Cache, BloomFilter and SSTable for given key
@@ -124,16 +127,12 @@ func (engine *Engine) Commit(key string, value []byte, tombstone byte) error {
 		}
 	}
 	if didFlush {
-		stable, err := sstable.CreateSStable(records, engine.Config.SSTableInSameFile, engine.Config.CompressionOn, int(engine.Config.IndexDegree), int(engine.Config.SummaryDegree))
+		sstable, err := sstable.CreateSStable(records, engine.Config.SSTableInSameFile, engine.Config.CompressionOn, int(engine.Config.IndexDegree), int(engine.Config.SummaryDegree))
 		if err != nil {
 			return err
 		}
-		//Sta raditi sa ovim
-		fmt.Println(stable)
+		engine.LSMTree.AddSSTable(sstable)
+		engine.Cache.UpdateKeys(records)
 	}
-
-	//Ako je memtable pun prebaci na sledeci
-	//Ako su svi puni vrati sortirane stringove
-	//Dodaj u SSTable a MemTable isprazni
 	return nil
 }
