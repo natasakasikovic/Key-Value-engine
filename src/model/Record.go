@@ -7,6 +7,8 @@ import (
 	"hash/crc32"
 	"io"
 	"os"
+
+	"github.com/natasakasikovic/Key-Value-engine/src/utils"
 )
 
 type Record struct {
@@ -19,7 +21,10 @@ type Record struct {
 	Value     []byte
 }
 
-func (r *Record) ToBytes() []byte {
+func (r *Record) Serialize(compressionOn bool) []byte {
+	if compressionOn {
+		return serializeWithCompression(r)
+	}
 	var buffer bytes.Buffer
 	binary.Write(&buffer, binary.BigEndian, r.KeySize)
 	buffer.Write([]byte(r.Key))
@@ -41,8 +46,11 @@ func CRC32(data []byte) uint32 {
 }
 
 // deserializes a record by reading field by field from the file
-// returns Record, number of bytes read, error
-func Deserialize(file *os.File) (*Record, uint64, error) {
+// returns Record, number of bytes read, any error
+func Deserialize(file *os.File, compressionOn bool) (*Record, uint64, error) {
+	if compressionOn {
+		return deserializeWithCompression(file)
+	}
 	var err error
 	var record Record = Record{}
 
@@ -112,4 +120,88 @@ func Deserialize(file *os.File) (*Record, uint64, error) {
 	}
 
 	return &record, read, nil
+}
+
+// serializes a Record with variable-length fields, returning the resulting byte slice.
+func serializeWithCompression(r *Record) []byte {
+	var buf bytes.Buffer
+
+	utils.PutUvarint(&buf, r.KeySize)
+	buf.WriteString(r.Key)
+	utils.PutUvarint(&buf, uint64(r.Crc))
+	utils.PutUvarint(&buf, r.Timestamp)
+	buf.WriteByte(r.Tombstone)
+	if r.Tombstone != 1 {
+		utils.PutUvarint(&buf, r.ValueSize)
+		buf.Write(r.Value)
+	}
+
+	return buf.Bytes()
+}
+
+// deserializes a compressed Record from the given file, returning the record, total bytes read, and any error.
+func deserializeWithCompression(file *os.File) (*Record, uint64, error) {
+	record := &Record{}
+	var totalBytesRead uint64 = 0
+
+	keySize, bytesRead, err := utils.ReadUvarint(file)
+	if err != nil {
+		return nil, totalBytesRead, err
+	}
+	record.KeySize = keySize
+	totalBytesRead += bytesRead
+
+	keyBuf := make([]byte, keySize)
+	n, err := io.ReadAtLeast(file, keyBuf, int(keySize))
+	if err != nil {
+		return nil, totalBytesRead + uint64(n), err
+	}
+	totalBytesRead += uint64(n)
+	record.Key = string(keyBuf)
+
+	crc, bytesRead, err := utils.ReadUvarint(file)
+	if err != nil {
+		return nil, totalBytesRead, err
+	}
+	record.Crc = uint32(crc)
+	totalBytesRead += bytesRead
+
+	timestamp, bytesRead, err := utils.ReadUvarint(file)
+	if err != nil {
+		return nil, totalBytesRead, err
+	}
+	record.Timestamp = timestamp
+	totalBytesRead += bytesRead
+
+	tombstoneByte := make([]byte, 1)
+	n, err = io.ReadFull(file, tombstoneByte)
+	if err != nil {
+		return nil, totalBytesRead + uint64(n), err
+	}
+	totalBytesRead += uint64(n)
+	record.Tombstone = tombstoneByte[0]
+
+	if record.Tombstone != 1 {
+		valueSize, bytesRead, err := utils.ReadUvarint(file)
+		if err != nil {
+			return nil, totalBytesRead, err
+		}
+		record.ValueSize = valueSize
+		totalBytesRead += bytesRead
+
+		valueBuf := make([]byte, valueSize)
+		n, err := io.ReadFull(file, valueBuf)
+		if err != nil {
+			return nil, totalBytesRead + uint64(n), err
+		}
+		totalBytesRead += uint64(n)
+		record.Value = valueBuf
+	}
+
+	crcChech := append([]byte(record.Key), record.Value...)
+	if CRC32(crcChech) != record.Crc {
+		return nil, totalBytesRead, errors.New("not valid record")
+	}
+
+	return record, totalBytesRead, nil
 }
