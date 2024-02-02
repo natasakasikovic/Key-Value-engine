@@ -28,9 +28,13 @@ func NewMemtableIterator(table *memtable.Memtable) (*MemtableIterator, error) {
 	return iter, nil
 }
 
+// Returns the next non-deleted record in the memtable
+// Will NEVER return a deleted record
+// If all non-deleted records have been iterated over, returns nil as the record pointer
 func (iter *MemtableIterator) Next() (*model.Record, error) {
 	for iter.current_index < iter.key_count {
 		record, err := iter.data.Find(iter.key_list[iter.current_index])
+		iter.current_index += 1
 		if err != nil {
 			return nil, err
 		}
