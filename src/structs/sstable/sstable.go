@@ -21,7 +21,7 @@ type SSTable struct {
 	data, index, summary                                           *os.File
 	bf                                                             *bloomFilter.BloomFilter
 	merkle                                                         *merkletree.MerkleTree
-	minKey, maxKey, name                                           string
+	MinKey, MaxKey, Name                                           string
 	dataOffset, indexOffset, summaryOffset, merkleOffset, bfOffset int64
 }
 
@@ -51,7 +51,7 @@ func CreateSStable(records []*model.Record, singleFile, compressionOn bool, inde
 	if err != nil {
 		return nil, err
 	}
-	sstable.name = dirNames[len(dirNames)-1]
+	sstable.Name = dirNames[len(dirNames)-1]
 
 	if compressionOn {
 		// TODO: implement compression
@@ -61,8 +61,8 @@ func CreateSStable(records []*model.Record, singleFile, compressionOn bool, inde
 	for _, record := range records {
 		sstable.bf.Insert(record.Key)
 	}
-	sstable.minKey = records[0].Key
-	sstable.maxKey = records[len(records)-1].Key
+	sstable.MinKey = records[0].Key
+	sstable.MaxKey = records[len(records)-1].Key
 	sstable.merkle, _ = merkletree.NewTree(sstable.serializeData(records))
 
 	if singleFile {
@@ -101,42 +101,46 @@ func Search(key string) (*model.Record, error) {
 		} else {
 			sstable, err = LoadSSTableSeparate(path)
 		}
+
 		if err != nil {
 			return nil, err
 		}
-		sstable.name = dirName
 
-		sstable.loadBF(len(content) != 1, dirName)
-		if !sstable.bf.Find(key) { // then record is not in this sstable, go to next
+		sstable.Name = dirName
+
+		sstable.loadBF(len(content) != 1, dirName) // first ask bloomfilter
+		if !sstable.bf.Find(key) {                 // then record is not in this sstable, go to next sstable
 			continue
 		}
-		if key < sstable.minKey || key > sstable.maxKey {
+		if key < sstable.MinKey || key > sstable.MaxKey {
 			continue
 		}
 
-		var data []byte
-		data, err = sstable.loadSummary(len(content) != 1)
+		var endingOffset int = sstable.getEndingOffsetSummary(len(content) == 1)
+
+		offset1, offset2, err := sstable.searchIndex(sstable.summary, int(sstable.summaryOffset), endingOffset, key)
+
 		if err != nil {
 			return nil, err
 		}
 
-		offset1, offset2 := sstable.searchIndex(data, key)
+		offset1 += uint64(sstable.indexOffset) // if it is single file starting index offste is okay
+		offset2 = getEndingOffset(len(content) == 1, sstable.index, sstable.indexOffset, sstable.summaryOffset, int64(offset2))
 
-		data, err = sstable.loadIndex(len(content) != 1, int(offset1), int(offset2))
+		offset1, offset2, err = sstable.searchIndex(sstable.index, int(offset1), int(offset2), key)
+
 		if err != nil {
 			return nil, err
 		}
 
-		offset1, offset2 = sstable.searchIndex(data, key)
-		record, err := sstable.searchData(len(content) != 1, int(offset1), int(offset2), key)
+		offset1 += uint64(sstable.dataOffset) // if it is single file starting index offste is okay
+		offset2 = getEndingOffset(len(content) == 1, sstable.data, sstable.dataOffset, sstable.indexOffset, int64(offset2))
 
-		if err != nil {
-			return nil, err
-		} else {
-			return record, nil
-		}
+		record, err := sstable.searchData(len(content) == 1, int(offset1), int(offset2), key)
+		return record, nil
 
 	}
+
 	return nil, nil
 }
 
@@ -153,14 +157,14 @@ func (sstable *SSTable) Delete() error {
 
 	i := 0
 	for i < len(dirContent) {
-		if dirContent[i] == sstable.name {
+		if dirContent[i] == sstable.Name {
 			break
 		}
 		i++
 	}
 
 	// remove content of sstable
-	sstableFolder, err := utils.GetDirContent(fmt.Sprintf("%s/%s", PATH, sstable.name)) // dirContent - names of all sstables dirs
+	sstableFolder, err := utils.GetDirContent(fmt.Sprintf("%s/%s", PATH, sstable.Name)) // dirContent - names of all sstables dirs
 	for j := 0; j < len(sstableFolder); j++ {
 		err = os.Remove(fmt.Sprintf("%s/%s/%s", PATH, dirContent[i], sstableFolder[j]))
 		if err != nil {
