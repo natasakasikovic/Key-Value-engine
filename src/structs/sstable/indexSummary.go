@@ -15,7 +15,7 @@ func (sstable *SSTable) searchIndex(file *os.File, offset1 int, offset2 int, key
 	var bytesRead int
 	var err error
 
-	file.Seek(int64(offset1), 0)                          // seek to the beginning of index/summary
+	file.Seek(int64(offset1), 0)
 	prev, targetOffset1, bytesRead, err = readBlock(file) // read first block
 	offset1 += bytesRead
 

@@ -112,21 +112,34 @@ func Search(key string) (*model.Record, error) {
 		if !sstable.bf.Find(key) {                 // then record is not in this sstable, go to next sstable
 			continue
 		}
-		if key < sstable.MinKey || key > sstable.MaxKey {
+		if key < sstable.MinKey || key > sstable.MaxKey { // if key is not in range of sstable, go to next sstable
 			continue
 		}
 
 		var endingOffset int = sstable.getEndingOffsetSummary(len(content) == 1)
 
+		// offset1 and offset2 are offsets between which we should search index
 		offset1, offset2, err := sstable.searchIndex(sstable.summary, int(sstable.summaryOffset), endingOffset, key)
 
 		if err != nil {
 			return nil, err
 		}
 
-		offset1 += uint64(sstable.indexOffset) // if it is single file starting index offste is okay
+		if offset2 == 0 { // this means that we need to search until the end of index
+			offset2 = uint64(sstable.summaryOffset) - uint64(sstable.indexOffset) // this is the size of index
+		} else { // in other case we need to read next value
+			sstable.index.Seek(int64(offset2+uint64(sstable.indexOffset)), 0)
+			_, _, bytesRead, err := readBlock(sstable.index)
+			if err != nil {
+				return nil, err
+			}
+			offset2 += uint64(bytesRead) // we need to increase offset2, so we can read one more value while searching in index
+		}
+
+		offset1 += uint64(sstable.indexOffset) // if it is single file starting index offset is ok
 		offset2 = getEndingOffset(len(content) == 1, sstable.index, sstable.indexOffset, sstable.summaryOffset, int64(offset2))
 
+		// offset1 and offset2 are offsets between which we should search data
 		offset1, offset2, err = sstable.searchIndex(sstable.index, int(offset1), int(offset2), key)
 
 		if err != nil {
@@ -137,14 +150,19 @@ func Search(key string) (*model.Record, error) {
 		offset2 = getEndingOffset(len(content) == 1, sstable.data, sstable.dataOffset, sstable.indexOffset, int64(offset2))
 
 		record, err := sstable.searchData(len(content) == 1, int(offset1), int(offset2), key)
-		return record, nil
 
+		if err != nil {
+			return nil, err
+		}
+
+		return record, nil
 	}
 
 	return nil, nil
 }
 
 // deletes sstable folder, returns error if it occured during deletion
+// used for compactions
 func (sstable *SSTable) Delete() error {
 
 	sstable.data.Close()
