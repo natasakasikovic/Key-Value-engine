@@ -3,8 +3,6 @@ package merkletree
 import (
 	"crypto/sha1"
 	"errors"
-	"fmt"
-	"reflect"
 )
 
 type MerkleTree struct {
@@ -94,17 +92,28 @@ func (merkle *MerkleTree) VerifyTree(data [][]byte) ([]int, error) {
 	otherMerkle, err := NewTree(data)
 	var idxNodes []int
 	if err != nil {
-		return idxNodes, errors.New("there is no sense to check if something changed in tree while content is empty")
+		return nil, errors.New("there is no sense to check if something changed in tree while content is empty")
 	}
-	if otherMerkle.Root.data == merkle.Root.data {
-		return idxNodes, nil
-	} else { // in case roots are not same, we are looking for leaves that have changed
-		for i := 0; i < len(merkle.leaves); i++ {
-			if merkle.leaves[i].data != otherMerkle.leaves[i].data {
-				idxNodes = append(idxNodes, i)
-			}
+
+	if len(merkle.leaves) != len(otherMerkle.leaves) {
+		return nil, errors.New("File is too much damaged")
+	}
+
+	if otherMerkle.Root.data != merkle.Root.data { // in case roots are not same, we are looking for leaves that have changed using dfs algorithm
+		dfs(merkle.Root, otherMerkle.Root, &idxNodes, 0)
+	}
+	return idxNodes, nil
+}
+
+// dfs algorithm checks if nodes are same, if they are not same then we append their index to idxNodes if they are leaves(left and right children are nil)
+func dfs(node1 *Node, node2 *Node, idxNodes *[]int, idx int) {
+	if node1.data != node2.data {
+		if node1.left == nil && node1.right == nil { // if they are leaves then append their index
+			*idxNodes = append(*idxNodes, idx)
+		} else {
+			dfs(node1.left, node2.left, idxNodes, idx*2)
+			dfs(node1.right, node2.right, idxNodes, idx*2+1)
 		}
-		return idxNodes, nil
 	}
 }
 
@@ -201,19 +210,4 @@ func addEmptyNode(nodes []*Node) []*Node {
 		parent: nil,
 	})
 	return nodes
-}
-
-func TestMerkle() {
-	content := [][]byte{[]byte("Data1"), []byte("Data2"), []byte("Data3"), []byte("Data1"), []byte("Data2"), []byte("Data1")}
-	merkle, _ := NewTree(content)
-	// list, _ := merkle.VerifyTree([][]byte{[]byte("Data1"), []byte("Data2"), []byte("Data5")}) // OK
-	// fmt.Println(list)
-	bytes := merkle.Serialize() // OK
-	fmt.Println(bytes)
-	deserialziedMerkle := Deserialize(bytes) // OK
-	if reflect.DeepEqual(merkle, deserialziedMerkle) {
-		fmt.Println("Trees have same data")
-	} else {
-		fmt.Println("Trees dont have same data, some error occured")
-	}
 }
