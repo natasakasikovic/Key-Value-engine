@@ -94,7 +94,20 @@ func LoadLSMTreeFromFile(maxDepth uint32, compactionType string, firstLevelSize 
 			}
 
 			table.Name = dirName
+			closeSSTable(table)
 			lsm.sstableArrays[i] = append(lsm.sstableArrays[i], table)
+		}
+	}
+
+	//Check if all levels are sorted if the compaction type is leveled
+	if lsm.compactionType == "leveled" {
+		for i := 0; i < int(lsm.maxDepth); i++ {
+			for j := 0; j < len(lsm.sstableArrays[i])-1; j++ {
+				//If the left table contains a key larger than in the right table, the lsm is not leveled
+				if lsm.sstableArrays[i][j].MaxKey >= lsm.sstableArrays[i][j+1].MinKey {
+					return nil
+				}
+			}
 		}
 	}
 
@@ -164,6 +177,7 @@ func (tree *LSMTree) reopenSSTables() error {
 				tree.sstableArrays[i][j], err = sstable.LoadSStableSingle(path)
 			}
 			tree.sstableArrays[i][j].Name = name
+			closeSSTable(tree.sstableArrays[i][j])
 
 			if err != nil {
 				return err
@@ -293,6 +307,11 @@ func mergeSSTables(sstableArray []*sstable.SSTable, sstableIndexDegree uint32, s
 			return nil, err
 		}
 	}
+
+	for i := 0; i < sstableCount; i++ {
+		fileIterators[i].Stop()
+	}
+
 	newSSTable, err := sstable.CreateSStable(newRecords, sstableInSameFile, sstableCompressionOn, int(sstableIndexDegree), int(sstableSummaryDegree))
 
 	if err != nil {
@@ -306,6 +325,14 @@ func closeSSTable(table *sstable.SSTable) {
 	table.Data.Close()
 	table.Index.Close()
 	table.Summary.Close()
+}
+
+func (tree *LSMTree) closeAllTables() {
+	for i := 0; i < int(tree.maxDepth); i++ {
+		for j := 0; j < len(tree.sstableArrays[i]); j++ {
+			closeSSTable(tree.sstableArrays[i][j])
+		}
+	}
 }
 
 // Deletes the passed sstable from the disk and updates the name attribute of other sstables
@@ -334,7 +361,6 @@ func (tree *LSMTree) deleteTable(table *sstable.SSTable) error {
 
 	for i := 0; i < int(tree.maxDepth); i++ {
 		for j := 0; j < len(tree.sstableArrays[i]); j++ {
-			closeSSTable(tree.sstableArrays[i][j])
 			newName, exists := nameMapping[tree.sstableArrays[i][j].Name]
 			if exists {
 				tree.sstableArrays[i][j].Name = newName
@@ -342,9 +368,7 @@ func (tree *LSMTree) deleteTable(table *sstable.SSTable) error {
 		}
 	}
 
-	table.Data.Close()
-	table.Index.Close()
-	table.Summary.Close()
+	tree.closeAllTables()
 	table.Delete()
 	return nil
 }
@@ -413,6 +437,14 @@ func (tree *LSMTree) leveledCompaction(levelIndex uint32) error {
 		merged, err := mergeSSTables(toMerge, tree.sstableIndexDegree, tree.sstableSummaryDegree,
 			tree.sstableInSameFile, tree.sstableCompressionOn)
 
+		//Insert the merged sstable into the level
+		tree.closeAllTables()
+		tree.sstableArrays[levelIndex+1] = append(tree.sstableArrays[levelIndex+1], nil)
+		copy(tree.sstableArrays[levelIndex+1][leftIndex+1:], tree.sstableArrays[levelIndex+1][leftIndex:])
+		tree.sstableArrays[levelIndex+1][leftIndex] = merged
+		leftIndex += 1
+		rightIndex += 1
+
 		if err != nil {
 			return err
 		}
@@ -423,12 +455,11 @@ func (tree *LSMTree) leveledCompaction(levelIndex uint32) error {
 			tree.deleteTable(tree.sstableArrays[levelIndex+1][i])
 		}
 
-		//Insert the merged sstable into the level and remove the deleted sstables from the level
-		tree.sstableArrays[levelIndex+1][leftIndex] = merged
-		copy(tree.sstableArrays[levelIndex+1][leftIndex+1:], tree.sstableArrays[levelIndex+1][rightIndex+1:])
+		// Remove the deleted sstables from the level
+		copy(tree.sstableArrays[levelIndex+1][leftIndex:], tree.sstableArrays[levelIndex+1][rightIndex+1:])
 
 		//How many sstables were removed from the lower level
-		var tablesLost int = rightIndex - leftIndex
+		var tablesLost int = rightIndex - leftIndex + 1
 		//Change the extra tables to nil for the garbage collector
 		var lowerLevelLen int = len(tree.sstableArrays[levelIndex+1])
 		for i := 0; i < tablesLost; i++ {
@@ -436,7 +467,6 @@ func (tree *LSMTree) leveledCompaction(levelIndex uint32) error {
 		}
 		tree.sstableArrays[levelIndex+1] = tree.sstableArrays[levelIndex+1][:lowerLevelLen-tablesLost]
 
-		tree.reopenSSTables()
 	}
 
 	//Remove the upper sstable from the upper level
@@ -444,6 +474,7 @@ func (tree *LSMTree) leveledCompaction(levelIndex uint32) error {
 	levelLen := len(tree.sstableArrays[levelIndex])
 	tree.sstableArrays[levelIndex][levelLen-1] = nil
 	tree.sstableArrays[levelIndex] = tree.sstableArrays[levelIndex][:levelLen-1]
+	tree.reopenSSTables()
 
 	return nil
 }
@@ -465,8 +496,8 @@ func (tree *LSMTree) sizeTieredCompaction(levelIndex uint32) error {
 	tree.sstableArrays[levelIndex+1] = append(tree.sstableArrays[levelIndex+1], merged)
 
 	//Delete old sstables
-	for i := 0; i < len(tree.sstableArrays[levelIndex]); i++ {
-		tree.deleteTable(tree.sstableArrays[levelIndex][i])
+	for i := 0; i < len(toMerge); i++ {
+		tree.deleteTable(toMerge[i])
 	}
 	//Empty out the array for the compacted level
 	clear(tree.sstableArrays[levelIndex])
@@ -518,6 +549,7 @@ func (tree *LSMTree) checkLevel(levelIndex uint32) {
 }
 
 func (tree *LSMTree) AddSSTable(sstable *sstable.SSTable) {
+	closeSSTable(sstable)
 	tree.sstableArrays[0] = append(tree.sstableArrays[0], sstable)
 	tree.checkLevel(0)
 }

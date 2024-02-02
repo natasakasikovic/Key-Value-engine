@@ -27,51 +27,24 @@ func TestSvasta(t *testing.T) {
 		TokenResetInterval:   60,
 	}
 
-	var lsm_p *LSMTree = LoadLSMTreeFromFile(7, "", 3, 10, 5, 5, false, false)
+	var lsm_p *LSMTree = LoadLSMTreeFromFile(7, "leveled", 2, 10, 5, 5, false, false)
 
 	var lsm LSMTree
 	if lsm_p == nil {
-		lsm = *NewLSMTree(7, "sizetiered", 3, 10, 5, 5, false, false)
+		lsm = *NewLSMTree(7, "leveled", 2, 10, 5, 5, false, false)
 	} else {
 		lsm = *lsm_p
 	}
 
-	var records1 []*model.Record = []*model.Record{
-		model.NewRecord(0, "a", []byte("a")),
-		model.NewRecord(0, "b", []byte("b")),
-		model.NewRecord(0, "c", []byte("c")),
+	for i := 0; i < 7; i++ {
+		records := []*model.Record{
+			model.NewRecord(0, string('a'+rune(i*3)), []byte("a")),
+			model.NewRecord(0, string('a'+rune(i*3+1)), []byte("b")),
+			model.NewRecord(0, string('a'+rune(i*3+2)), []byte("c")),
+		}
+		newSSTable1, _ := sstable.CreateSStable(records, conf.SSTableInSameFile, conf.CompressionOn, int(conf.IndexSummaryDegree), int(conf.IndexSummaryDegree))
+		lsm.AddSSTable(newSSTable1)
 	}
-
-	var records2 []*model.Record = []*model.Record{
-		model.NewRecord(0, "d", []byte("a")),
-		model.NewRecord(0, "e", []byte("b")),
-		model.NewRecord(0, "f", []byte("c")),
-	}
-
-	var records3 []*model.Record = []*model.Record{
-		model.NewRecord(0, "g", []byte("a")),
-		model.NewRecord(0, "h", []byte("b")),
-		model.NewRecord(0, "i", []byte("c")),
-	}
-
-	var wait int = 0
-	for i := 0; i < 10000000; i++ {
-		wait += 1
-	}
-
-	var records4 []*model.Record = []*model.Record{
-		model.NewRecord(0, "a", []byte("a")),
-		model.NewRecord(0, "i", []byte("b")),
-	}
-
-	newSSTable1, _ := sstable.CreateSStable(records1, conf.SSTableInSameFile, conf.CompressionOn, int(conf.IndexSummaryDegree), int(conf.IndexSummaryDegree))
-	lsm.AddSSTable(newSSTable1)
-	newSSTable2, _ := sstable.CreateSStable(records2, conf.SSTableInSameFile, conf.CompressionOn, int(conf.IndexSummaryDegree), int(conf.IndexSummaryDegree))
-	lsm.AddSSTable(newSSTable2)
-	newSSTable4, _ := sstable.CreateSStable(records4, conf.SSTableInSameFile, conf.CompressionOn, int(conf.IndexSummaryDegree), int(conf.IndexSummaryDegree))
-	lsm.AddSSTable(newSSTable4)
-	newSSTable3, _ := sstable.CreateSStable(records3, conf.SSTableInSameFile, conf.CompressionOn, int(conf.IndexSummaryDegree), int(conf.IndexSummaryDegree))
-	lsm.AddSSTable(newSSTable3)
 
 	lsm.SaveToFile()
 
