@@ -86,9 +86,9 @@ type SSTableIterator struct {
 	end_offset     int64
 }
 
-func isSSTableInSingleFile(table *sstable.SSTable) (bool, error) {
+func isSSTableInSingleFile(tableName string) (bool, error) {
 	//sstableFolder - Array of the names of all files in the sstable folder
-	sstableFolder, err := utils.GetDirContent(fmt.Sprintf("%s/%s", sstable.PATH, table.Name))
+	sstableFolder, err := utils.GetDirContent(fmt.Sprintf("%s/%s", sstable.PATH, tableName))
 	if err != nil {
 		return false, err
 	}
@@ -100,9 +100,44 @@ func isSSTableInSingleFile(table *sstable.SSTable) (bool, error) {
 	}
 }
 
+// Loads all sstables from the disk into an array
+// Returns an error on fail
+func loadAllSStables() ([]*sstable.SSTable, error) {
+	//Array of the names of all sstables
+	sstableNames, err := utils.GetDirContent(sstable.PATH)
+	if err != nil {
+		return make([]*sstable.SSTable, 0), err
+	}
+
+	var tables []*sstable.SSTable = make([]*sstable.SSTable, 0)
+	for i := 0; i < len(sstableNames); i++ {
+		var table *sstable.SSTable
+		isSingleFile, err := isSSTableInSingleFile(sstableNames[i])
+		if err != nil {
+			return make([]*sstable.SSTable, 0), err
+		}
+
+		var path string = fmt.Sprintf("%s/%s", sstable.PATH, sstableNames[i])
+
+		if isSingleFile {
+			table, err = sstable.LoadSStableSingle(path)
+		} else {
+			table, err = sstable.LoadSSTableSeparate(path)
+		}
+		if err != nil {
+			return make([]*sstable.SSTable, 0), err
+		}
+
+		table.Name = sstableNames[i]
+		tables = append(tables, table)
+	}
+
+	return tables, nil
+}
+
 // Returns the offset where data begins, and the offset right after the data ends
 func getDataOffsets(table *sstable.SSTable) (int64, int64, error) {
-	oneFile, err := isSSTableInSingleFile(table)
+	oneFile, err := isSSTableInSingleFile(table.Name)
 	if err != nil {
 		return 0, 0, err
 	}
@@ -147,8 +182,9 @@ func NewSSTableIterator(table *sstable.SSTable) (*SSTableIterator, error) {
 	return iterator, nil
 }
 
-// Returns a pointer to the next iterated record, also returns an error
-// If all records have been iterated over, returns nil as the record pointer
+// Returns a pointer to the next non-deleted record, also returns an error
+// Will NEVER return a deleted record
+// If all non-deleted records have been iterated over, returns nil as the record pointer
 // If any errors occur, the returned record is nil and the error is returned
 func (iter *SSTableIterator) Next() (*model.Record, error) {
 
@@ -170,6 +206,7 @@ func (iter *SSTableIterator) Next() (*model.Record, error) {
 	return nil, nil
 }
 
+// Closes the data file that was being iterated over
 func (iter *SSTableIterator) Stop() {
 	iter.data.Close()
 }
