@@ -23,12 +23,8 @@ const (
 	TB_KEY  = "tokenBucket"
 )
 
-func prefixScan(isSStableCompressed bool) ([]*model.Record, error) {
+func prefixScan(isSStableCompressed bool, prefix string) ([]*model.Record, error) {
 	scanner := bufio.NewScanner(os.Stdin)
-
-	fmt.Print("Enter the prefix: ")
-	scanner.Scan()
-	prefix := scanner.Text()
 
 	fmt.Print("Enter the page number: ")
 	scanner.Scan()
@@ -245,7 +241,10 @@ func scanning(engine *engine.Engine) {
 
 		switch option {
 		case 1:
-			records, err := prefixScan(engine.Config.CompressionOn)
+			fmt.Print("Enter the prefix: ")
+			scanner.Scan()
+			prefix := scanner.Text()
+			records, err := prefixScan(engine.Config.CompressionOn, prefix)
 			if records == nil && err != nil {
 				fmt.Printf("err: %v\n", err)
 			} else if records != nil && err == nil {
@@ -354,7 +353,7 @@ func putRequest(engine *engine.Engine) {
 	}
 }
 func useBF(engine *engine.Engine) {
-	records, err := prefixScan(engine.Config.CompressionOn)
+	records, err := prefixScan(engine.Config.CompressionOn, BF_KEY)
 	if err != nil || len(records) == 0 {
 		fmt.Println("There are no existing BloomFilters.")
 	} else if records != nil && err == nil {
