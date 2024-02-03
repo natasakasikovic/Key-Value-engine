@@ -3,6 +3,11 @@ package system
 import (
 	"errors"
 	"fmt"
+	"log"
+	"os"
+	"strings"
+	"time"
+
 	config2 "github.com/natasakasikovic/Key-Value-engine/src/config"
 	"github.com/natasakasikovic/Key-Value-engine/src/model"
 	"github.com/natasakasikovic/Key-Value-engine/src/structs/LRUCache"
@@ -11,10 +16,6 @@ import (
 	"github.com/natasakasikovic/Key-Value-engine/src/structs/WAL"
 	"github.com/natasakasikovic/Key-Value-engine/src/structs/memtable"
 	"github.com/natasakasikovic/Key-Value-engine/src/structs/sstable"
-	"log"
-	"os"
-	"strings"
-	"time"
 )
 
 const (
@@ -45,15 +46,15 @@ func NewEngine() (*Engine, error) {
 	}
 	cache := LRUCache.NewLRUCache(config.LRUCacheMaxSize)
 
-	memtable.InitMemtables(uint64(config.MemtableSize), config.MemtableStructure, uint64(config.MemTableMaxInstances), config.BTreeOrder)
+	memtable.InitMemtables(uint64(config.MemtableSize), config.MemtableStructure, uint64(config.MemTableMaxInstances), config.BTreeOrder, config.SkipListMaxHeight)
 	//Ucitavanje bf, cms, hll, simhash iz fajlova
 	err = wal.ReadRecords()
 	if err != nil {
 		return nil, err
 	}
 	tokenBucket := TokenBucket.NewTokenBucket(config.NumberOfTokens, int64(config.TokenResetInterval))
-	lsmTree := lsmtree.NewLSMTree(config)
-	return &Engine{Wal: wal, Cache: cache, TokenBucket: tokenBucket, Config: config, LSMTree: &lsmTree}, nil
+	lsmTree := lsmtree.NewLSMTree(config.LSMTreeMaxDepth, config.LSMCompactionType, config.LSMFirstLevelSize, config.LSMGrowthFactor, config.IndexDegree, config.SummaryDegree, config.SSTableInSameFile, config.CompressionOn)
+	return &Engine{Wal: wal, Cache: cache, TokenBucket: tokenBucket, Config: config, LSMTree: lsmTree}, nil
 }
 
 // Get Checks Memtable, Cache, BloomFilter and SSTable for given key
