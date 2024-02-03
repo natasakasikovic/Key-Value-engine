@@ -2,42 +2,39 @@ package sstable
 
 import (
 	"github.com/natasakasikovic/Key-Value-engine/src/model"
+	"github.com/natasakasikovic/Key-Value-engine/src/utils"
 )
 
 // serializes records - turns them to [][]byte
 func (sstable *SSTable) serializeData(records []*model.Record) [][]byte {
 	var content [][]byte
 	for _, record := range records {
-		content = append(content, record.ToBytes())
+		content = append(content, record.Serialize(false)) // TODO: change parameter in Serialize based on configuration
 	}
 	return content
 }
 
-// returns a pointer to record if found, otherwise returns nil
+// function that searches data in sstable
+// returns record if it is found, otherwise returns nil
 func (sstable *SSTable) searchData(isSeparate bool, offset1 int, offset2 int, key string) (*model.Record, error) {
-	var data []byte
-	var err error
-
-	if isSeparate {
-		data, err = sstable.loadDataSeparate(offset2, offset1)
-	} else {
-		data, err = sstable.loadDataSingle(offset2, offset1)
+	if offset2 == 0 {
+		if isSeparate {
+			fileSize, _ := utils.GetFileLength(sstable.Data)
+			offset2 = int(fileSize)
+		} else {
+			offset2 = int(sstable.IndexOffset)
+		}
 	}
-
-	if err != nil {
-		return nil, err
-	}
-
-	for len(data) > 0 { // read records until you have data
-		record, readBytes, err := model.FromBytes(data)
+	sstable.Data.Seek(int64(offset1), 0)
+	for offset1 < offset2 {
+		record, bytesRead, err := model.Deserialize(sstable.Data, false) // TODO: change parameter based on configuration
 		if err != nil {
 			return nil, err
 		}
 		if record.Key == key {
-			return &record, nil
+			return record, nil
 		}
-		data = data[readBytes:]
+		offset1 += int(bytesRead)
 	}
-
 	return nil, nil
 }

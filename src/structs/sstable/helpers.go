@@ -3,6 +3,9 @@ package sstable
 import (
 	"bytes"
 	"encoding/binary"
+	"os"
+
+	"github.com/natasakasikovic/Key-Value-engine/src/utils"
 )
 
 // this functions calculates lenght of bytes for forwarded content and returns it
@@ -29,22 +32,68 @@ func uint64ToBytes(value uint64) []byte {
 	return buffer
 }
 
-// reads block in summary/index
-// returns key, offset in index/data, number of bytes from content that are read
-func readBlock(content []byte) (string, uint64, int) {
+// gets an ending offset for index, depending is sstable single file or not
+func (sstable *SSTable) getEndingOffsetSummary(singleFile bool) int {
+	var endingOffset int
 
-	if len(content) == 0 {
-		return "", 0, 0
+	if singleFile {
+		endingOffset = int(sstable.MerkleOffset)
+	} else {
+		offset, _ := utils.GetFileLength(sstable.Summary)
+		endingOffset = int(offset)
 	}
+	return endingOffset
+}
+
+// gets an ending offset for index/data, depending is sstable single file or not
+// offset1 and offset2 is different for index and data, so we need to pass it as a parameter
+func getEndingOffset(singleFile bool, file *os.File, offset1, offset2, endingOffset int64) uint64 {
+	if endingOffset != 0 {
+		endingOffset += offset1
+	} else {
+		if singleFile {
+			endingOffset = int64(offset2)
+		} else {
+			fileSize, _ := utils.GetFileLength(file)
+			endingOffset = fileSize
+		}
+	}
+	return uint64(endingOffset)
+}
+
+// returns key, offset in index/data and bytes read
+func readBlock(file *os.File) (string, uint64, int, error) {
 	var keySize uint64
-	binary.Read(bytes.NewReader(content[:8]), binary.BigEndian, &keySize)
+	var offset uint64
+	var key string
+	var err error
+
+	keySizeBuffer := make([]byte, 8)
+	_, err = file.Read(keySizeBuffer)
+
+	if err != nil {
+		return "", 0, 0, err
+	}
+	keySize = binary.BigEndian.Uint64(keySizeBuffer)
 
 	keyBytes := make([]byte, keySize)
-	binary.Read(bytes.NewReader(content[8:8+keySize]), binary.BigEndian, &keyBytes)
-	var offset uint64
+	_, err = file.Read(keyBytes)
 
-	binary.Read(bytes.NewReader(content[8+keySize:8+keySize+8]), binary.BigEndian, &offset)
+	if err != nil {
+		return "", 0, 0, err
+	}
+
+	key = string(keyBytes)
+
+	offsetBuffer := make([]byte, 8)
+	_, err = file.Read(offsetBuffer)
+
+	if err != nil {
+		return "", 0, 0, err
+	}
+
+	offset = binary.BigEndian.Uint64(offsetBuffer)
+
 	totalSize := 16 + int(keySize)
-
-	return string(keyBytes), offset, totalSize
+	return key, offset, totalSize, nil
 }
