@@ -3,32 +3,44 @@ package sstable
 import (
 	"bytes"
 	"encoding/binary"
+	"os"
 )
 
 // returns 2 offsets between which we should search index
 // if offset2 == 0, then search until the end of index/summary
 // USED ALSO FOR SEARCHING IN SUMMARY
-func (sstable *SSTable) searchIndex(data []byte, key string) (uint64, uint64) {
+func (sstable *SSTable) searchIndex(file *os.File, offset1 int, offset2 int, key string) (uint64, uint64, error) {
 	var prev, next string
-	var offset1, offset2 uint64
+	var targetOffset1, targetOffset2 uint64
 	var bytesRead int
+	var err error
 
-	prev, offset1, bytesRead = readBlock(data)
-	data = data[bytesRead:]
-	for len(data) > 0 {
-		next, offset2, bytesRead = readBlock(data)
-		data = data[bytesRead:] // remove bytes that we have read
-		if key >= prev && key < next {
+	file.Seek(int64(offset1), 0)
+	prev, targetOffset1, bytesRead, err = readBlock(file) // read first block
+	offset1 += bytesRead
+
+	if err != nil {
+		return 0, 0, err
+	}
+
+	for offset1 < offset2 {
+		next, targetOffset2, bytesRead, err = readBlock(file)
+		if err != nil {
+			return 0, 0, err
+		}
+		if key >= prev && key < next { // if key is between prev and next, we found the right target offsets
 			break
 		}
+		offset1 += bytesRead
 		prev = next
-		offset1 = offset2
-	}
-	if key > next { // if key is greater that last exisitng key in summary, then read index [offset1:]
-		return offset1, 0
+		targetOffset1 = targetOffset2
 	}
 
-	return offset1, offset2
+	if key >= next {
+		return targetOffset1, 0, nil
+	}
+
+	return targetOffset1, targetOffset2, nil
 }
 
 func (sstable *SSTable) serializeIndexSummary(content [][]byte, n int) [][]byte {
