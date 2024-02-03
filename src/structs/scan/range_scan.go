@@ -8,7 +8,7 @@ import (
 // Returns an array of records containing keys within the passed range
 // The array contains at most pageSize records from the page with the passed page number
 // If an invalid page number or page size is passed, an empty array is returned with no error
-func RangeScan(minKey string, maxKey string, pageNumber int, pageSize int) ([]*model.Record, error) {
+func RangeScan(minKey string, maxKey string, pageNumber int, pageSize int, SSTableCompressionOn bool) ([]*model.Record, error) {
 	var records []*model.Record = make([]*model.Record, 0)
 
 	if pageNumber < 1 {
@@ -19,7 +19,7 @@ func RangeScan(minKey string, maxKey string, pageNumber int, pageSize int) ([]*m
 		return records, nil
 	}
 
-	rangeIter, err := iterators.NewRangeIterator(minKey, maxKey)
+	rangeIter, err := iterators.NewRangeIterator(minKey, maxKey, SSTableCompressionOn)
 	defer rangeIter.Stop()
 
 	if err != nil {

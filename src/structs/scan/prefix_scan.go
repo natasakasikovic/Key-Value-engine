@@ -8,7 +8,7 @@ import (
 // Returns an array of records with keys containing the passed prefix
 // The array contains at most pageSize records from the page with the passed page number
 // If an invalid page number or page size is passed, an empty array is returned with no error
-func PrefixScan(prefix string, pageNumber int, pageSize int) ([]*model.Record, error) {
+func PrefixScan(prefix string, pageNumber int, pageSize int, SSTableCompressionOn bool) ([]*model.Record, error) {
 	var records []*model.Record = make([]*model.Record, 0)
 
 	if pageNumber < 1 {
@@ -19,7 +19,7 @@ func PrefixScan(prefix string, pageNumber int, pageSize int) ([]*model.Record, e
 		return records, nil
 	}
 
-	prefixIter, err := iterators.NewPrefixIterator(prefix)
+	prefixIter, err := iterators.NewPrefixIterator(prefix, SSTableCompressionOn)
 	defer prefixIter.Stop()
 	if err != nil {
 		return records, err
