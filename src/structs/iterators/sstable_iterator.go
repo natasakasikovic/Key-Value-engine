@@ -33,6 +33,7 @@ func isSSTableInSingleFile(tableName string) (bool, error) {
 
 // Loads all sstables from the disk into an array
 // Returns an error on fail
+// The sstables are closed on load
 func loadAllSStables() ([]*sstable.SSTable, error) {
 	//Array of the names of all sstables
 	sstableNames, err := utils.GetDirContent(sstable.PATH)
@@ -60,6 +61,9 @@ func loadAllSStables() ([]*sstable.SSTable, error) {
 		}
 
 		table.Name = sstableNames[i]
+		table.Data.Close()
+		table.Index.Close()
+		table.Summary.Close()
 		tables = append(tables, table)
 	}
 
@@ -81,6 +85,7 @@ func getDataOffsets(table *sstable.SSTable) (int64, int64, error) {
 		}
 
 		fileLen, err := table.Data.Seek(0, io.SeekEnd)
+		table.Data.Close()
 		return table.DataOffset, fileLen, err
 	} else {
 		//IF THE WHOLE SSTABLE IS IN THE SAME FILE
@@ -92,6 +97,10 @@ func getDataOffsets(table *sstable.SSTable) (int64, int64, error) {
 // The iterator becomes unusable after any sstables get inserted into the LSM tree -
 // - due to the possibility of the data file being renamed.
 func NewSSTableIterator(table *sstable.SSTable, isCompressed bool) (*SSTableIterator, error) {
+	table.Data.Close()
+	table.Index.Close()
+	table.Summary.Close()
+
 	var iterator *SSTableIterator = &SSTableIterator{isSSTableCompressed: isCompressed}
 	var err error
 

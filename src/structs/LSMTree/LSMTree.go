@@ -44,7 +44,7 @@ func NewLSMTree(maxDepth uint32, compactionType string, firstLevelSize uint32, g
 	return tree
 }
 
-const LSM_PATH string = "../../../data/LSMTree.json"
+const LSM_PATH string = "../data/LSMTree.json"
 
 // Returns a pointer to the lsm tree if loaded successfuly
 // Otherwise, returns nil
@@ -187,131 +187,46 @@ func (tree *LSMTree) reopenSSTables() error {
 	return err
 }
 
-// Merges the passed sstables and splits them into new sstables
+// Merges the passed sstables into a new sstable
 func mergeSSTables(sstableArray []*sstable.SSTable, sstableIndexDegree uint32, sstableSummaryDegree uint32,
 	sstableInSameFile bool, sstableCompressionOn bool) (*sstable.SSTable, error) {
 	var sstableCount int = len(sstableArray)
-
-	var records []*model.Record = make([]*model.Record, sstableCount)
-	var fileIterators []*iterators.SSTableIterator = make([]*iterators.SSTableIterator, sstableCount)
-
-	const EMPTY_KEY string = ""
+	var fileIterators []iterators.Iterator = make([]iterators.Iterator, sstableCount)
 
 	//Initialize file iterators
 	for i := 0; i < sstableCount; i++ {
 		var err error
-		fileIterators[i], err = iterators.NewSSTableIterator(sstableArray[i])
-		if err != nil {
-			return nil, err
-		}
-
-		records[i], err = fileIterators[i].Next()
+		fileIterators[i], err = iterators.NewSSTableIterator(sstableArray[i], sstableCompressionOn)
 		if err != nil {
 			return nil, err
 		}
 	}
 
-	//Get the smallest key of the keys at the current iterators of the sstables
-	var getMinKey func() string = func() string {
-		var minimum string = EMPTY_KEY
-
-		for i := 0; i < sstableCount; i++ {
-			if records[i] != nil && (records[i].Key < minimum || minimum == EMPTY_KEY) {
-				minimum = records[i].Key
-			}
-		}
-
-		return minimum
+	iterGroup, err := iterators.NewIteratorGroup(fileIterators)
+	defer iterGroup.Stop()
+	if err != nil {
+		return nil, err
 	}
 
-	//Returns the number of records at the current iterators with the passed key
-	var getKeyCount func(string) uint = func(key string) uint {
-		var count uint = 0
-		for i := 0; i < sstableCount; i++ {
-			if records[i] != nil && records[i].Key == key {
-				count++
-			}
-		}
-		return count
-	}
-
-	var readNextRecord func(int) error = func(index int) error {
-		var err error
-		records[index], err = fileIterators[index].Next()
-		if err != nil {
-			return err
-		}
-		return nil
-	}
-
-	//Moves the indexes for the sstables containing duplicates of the minimum key forward by one
-	var moveDuplicatesForward func(string) error = func(key string) error {
-		//Index of the most recent record with the key
-		var latestIndex int = -1
-		//Timestamp of the most recent record with the key
-		var latestTS uint64 = 0
-
-		for i := 0; i < sstableCount; i++ {
-			if records[i] != nil && records[i].Key == key && (records[i].Timestamp > latestTS || latestIndex == -1) {
-				latestIndex = i
-				latestTS = records[i].Timestamp
-			}
-		}
-
-		//Move all duplicates that arent the latest record with the key forward
-		for i := 0; i < sstableCount; i++ {
-			if records[i] != nil && records[i].Key == key && i != latestIndex {
-				err := readNextRecord(i)
-				if err != nil {
-					return err
-				}
-			}
-		}
-
-		return nil
-	}
-
-	//Returns the index of the sstable iterator currently containing the passed key
-	//Assumes no other sstable iterator contains the key currently
-	//Only call after calling moveDuplicatesForward
-	var getIndexOfIteratorWithKey func(string) int = func(key string) int {
-		for i := 0; i < sstableCount; i++ {
-			if records[i] != nil && records[i].Key == key {
-				return i
-			}
-		}
-		return -1
-	}
-
+	//Array containing records going into the new sstable
 	var newRecords []*model.Record = make([]*model.Record, 0)
 
 	for {
-		var minKey string = getMinKey()
-		if minKey == EMPTY_KEY {
-			break
-		}
-
-		for getKeyCount(minKey) > 1 {
-			err := moveDuplicatesForward(minKey)
-			if err != nil {
-				return nil, err
-			}
-		}
-
-		var minIndex int = getIndexOfIteratorWithKey(minKey)
-		if records[minIndex].Tombstone == 0 {
-			newRecords = append(newRecords, records[minIndex])
-		}
-		err := readNextRecord(minIndex)
+		record_p, err := iterGroup.Next()
 		if err != nil {
 			return nil, err
 		}
+
+		//If all records have been read
+		if record_p == nil {
+			break
+		}
+
+		//If the record isn't nil, add it to the sstable
+		newRecords = append(newRecords, record_p)
 	}
 
-	for i := 0; i < sstableCount; i++ {
-		fileIterators[i].Stop()
-	}
-
+	//The new sstable
 	newSSTable, err := sstable.CreateSStable(newRecords, sstableInSameFile, sstableCompressionOn, int(sstableIndexDegree), int(sstableSummaryDegree))
 
 	if err != nil {
@@ -369,7 +284,10 @@ func (tree *LSMTree) deleteTable(table *sstable.SSTable) error {
 	}
 
 	tree.closeAllTables()
-	table.Delete()
+	err = table.Delete()
+	if err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -450,9 +368,16 @@ func (tree *LSMTree) leveledCompaction(levelIndex uint32) error {
 		}
 
 		//Delete sstables that were merged
-		tree.deleteTable(upperTable)
+		err = tree.deleteTable(upperTable)
+		if err != nil {
+			return err
+		}
+
 		for i := leftIndex; i <= rightIndex; i++ {
-			tree.deleteTable(tree.sstableArrays[levelIndex+1][i])
+			err = tree.deleteTable(tree.sstableArrays[levelIndex+1][i])
+			if err != nil {
+				return err
+			}
 		}
 
 		// Remove the deleted sstables from the level
@@ -497,7 +422,10 @@ func (tree *LSMTree) sizeTieredCompaction(levelIndex uint32) error {
 
 	//Delete old sstables
 	for i := 0; i < len(toMerge); i++ {
-		tree.deleteTable(toMerge[i])
+		err = tree.deleteTable(toMerge[i])
+		if err != nil {
+			return err
+		}
 	}
 	//Empty out the array for the compacted level
 	clear(tree.sstableArrays[levelIndex])
@@ -507,12 +435,15 @@ func (tree *LSMTree) sizeTieredCompaction(levelIndex uint32) error {
 	return nil
 }
 
-func (tree *LSMTree) compact(levelIndex uint32) {
+func (tree *LSMTree) compact(levelIndex uint32) error {
+	var err error
 	if tree.compactionType == "leveled" {
-		tree.leveledCompaction(levelIndex)
+		err = tree.leveledCompaction(levelIndex)
 	} else {
-		tree.sizeTieredCompaction(levelIndex)
+		err = tree.sizeTieredCompaction(levelIndex)
 	}
+	tree.closeAllTables()
+	return err
 }
 
 func uintPow(x, y uint32) uint32 {
@@ -536,20 +467,24 @@ func (tree *LSMTree) getCapacityOfLevel(levelIndex uint32) uint32 {
 	}
 }
 
-func (tree *LSMTree) checkLevel(levelIndex uint32) {
+func (tree *LSMTree) checkLevel(levelIndex uint32) error {
 	//No compaction on last level
 	if levelIndex+1 >= tree.maxDepth {
-		return
+		return nil
 	}
 
 	if len(tree.sstableArrays[levelIndex]) > int(tree.getCapacityOfLevel(levelIndex)) {
-		tree.compact(levelIndex)
-		tree.checkLevel(levelIndex + 1)
+		err := tree.compact(levelIndex)
+		if err != nil {
+			return err
+		}
+		return tree.checkLevel(levelIndex + 1)
 	}
+	return nil
 }
 
-func (tree *LSMTree) AddSSTable(sstable *sstable.SSTable) {
+func (tree *LSMTree) AddSSTable(sstable *sstable.SSTable) error {
 	closeSSTable(sstable)
 	tree.sstableArrays[0] = append(tree.sstableArrays[0], sstable)
-	tree.checkLevel(0)
+	return tree.checkLevel(0)
 }

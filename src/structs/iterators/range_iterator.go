@@ -30,12 +30,6 @@ func NewRangeIterator(minKey string, maxKey string, isSStableCompressed bool) (*
 				return nil, err
 			}
 			iterators = append(iterators, sstableIter)
-		} else {
-			//If the sstable contains no record with a key in the given range, close it to prevent leaks
-			allSStables[i].Data.Close()
-			allSStables[i].Index.Close()
-			allSStables[i].Summary.Close()
-			allSStables[i] = nil
 		}
 	}
 
