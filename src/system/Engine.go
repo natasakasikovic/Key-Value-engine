@@ -3,6 +3,10 @@ package system
 import (
 	"errors"
 	"fmt"
+	"log"
+	"os"
+	"time"
+
 	config2 "github.com/natasakasikovic/Key-Value-engine/src/config"
 	"github.com/natasakasikovic/Key-Value-engine/src/model"
 	"github.com/natasakasikovic/Key-Value-engine/src/structs/LRUCache"
@@ -11,18 +15,6 @@ import (
 	"github.com/natasakasikovic/Key-Value-engine/src/structs/WAL"
 	"github.com/natasakasikovic/Key-Value-engine/src/structs/memtable"
 	"github.com/natasakasikovic/Key-Value-engine/src/structs/sstable"
-	"log"
-	"os"
-	"strings"
-	"time"
-)
-
-const (
-	BF_KEY  = "bloomFilter"
-	CMS_KEY = "countMinSketch"
-	HLL_KEY = "hyperLogLog"
-	SH_KEY  = "simhash"
-	TB_KEY  = "tokenBucket"
 )
 
 type Engine struct {
@@ -45,22 +37,20 @@ func NewEngine() (*Engine, error) {
 	}
 	cache := LRUCache.NewLRUCache(config.LRUCacheMaxSize)
 
-	memtable.InitMemtables(uint64(config.MemtableSize), config.MemtableStructure, uint64(config.MemTableMaxInstances), config.BTreeOrder)
+	memtable.InitMemtables(uint64(config.MemtableSize), config.MemtableStructure, uint64(config.MemTableMaxInstances), config.BTreeOrder, config.SkipListMaxHeight)
 	//Ucitavanje bf, cms, hll, simhash iz fajlova
 	err = wal.ReadRecords()
 	if err != nil {
 		return nil, err
 	}
 	tokenBucket := TokenBucket.NewTokenBucket(config.NumberOfTokens, int64(config.TokenResetInterval))
-	lsmTree := lsmtree.NewLSMTree(config)
-	return &Engine{Wal: wal, Cache: cache, TokenBucket: tokenBucket, Config: config, LSMTree: &lsmTree}, nil
+	lsmTree := lsmtree.NewLSMTree(config.LSMTreeMaxDepth, config.LSMCompactionType, config.LSMFirstLevelSize, config.LSMGrowthFactor, config.IndexDegree, config.SummaryDegree, config.SSTableInSameFile, config.CompressionOn)
+	return &Engine{Wal: wal, Cache: cache, TokenBucket: tokenBucket, Config: config, LSMTree: lsmTree}, nil
 }
 
 // Get Checks Memtable, Cache, BloomFilter and SSTable for given key
 func (engine *Engine) Get(key string) ([]byte, error) {
-	if strings.HasPrefix(key, BF_KEY) || strings.HasPrefix(key, CMS_KEY) || strings.HasPrefix(key, HLL_KEY) || strings.HasPrefix(key, SH_KEY) || strings.HasPrefix(key, TB_KEY) {
-		return nil, errors.New("key must not begin with system prefix")
-	}
+
 	if !engine.TokenBucket.IsRequestAvailable() {
 		return nil, errors.New("wait until sending new request")
 	}
@@ -84,9 +74,7 @@ func (engine *Engine) Get(key string) ([]byte, error) {
 
 // Put Adds record to WAL and to Memtable with tombstone 0
 func (engine *Engine) Put(key string, value []byte) error {
-	if strings.HasPrefix(key, BF_KEY) || strings.HasPrefix(key, CMS_KEY) || strings.HasPrefix(key, HLL_KEY) || strings.HasPrefix(key, SH_KEY) || strings.HasPrefix(key, TB_KEY) {
-		return errors.New("key must not begin with system prefix")
-	}
+
 	if !engine.TokenBucket.IsRequestAvailable() {
 		return errors.New("wait until sending new request")
 	}
@@ -99,9 +87,6 @@ func (engine *Engine) Put(key string, value []byte) error {
 
 // Delete Adds record to WAL and to Memtable with tombstone 1
 func (engine *Engine) Delete(key string) error {
-	if strings.HasPrefix(key, BF_KEY) || strings.HasPrefix(key, CMS_KEY) || strings.HasPrefix(key, HLL_KEY) || strings.HasPrefix(key, SH_KEY) || strings.HasPrefix(key, TB_KEY) {
-		return errors.New("key must not begin with system prefix")
-	}
 	if !engine.TokenBucket.IsRequestAvailable() {
 		return errors.New("wait until sending new request")
 	}
