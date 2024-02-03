@@ -51,6 +51,7 @@ func (sstable *SSTable) readNextIndex() ([]byte, int, error) {
 // returns pointer to SSTable if succesfuly created, otherwise returns an error
 func LoadSStableSingle(p string) (*SSTable, error) {
 	var sstable *SSTable = &SSTable{}
+
 	var path string = fmt.Sprintf("%s/%s%s", p, FILE_NAME, "DataIndexSummary.db")
 
 	file, err := os.Open(path)
@@ -223,8 +224,8 @@ func (sstable *SSTable) makeSeparateFiles(path string, records []*model.Record, 
 		var contentSummary [][]byte = [][]byte{minKeyInfoSerialized, maxKeyInfoSerialized}
 
 		var contentData [][]byte = sstable.serializeData(records)
-		var contentIndex [][]byte = sstable.serializeIndexSummary(contentData, n)
-		contentSummary = append(contentSummary, sstable.serializeIndexSummary(contentIndex, m)...)
+		var contentIndex [][]byte = sstable.serializeIndexSummary(contentData, n, sstable.compressionOn)
+		contentSummary = append(contentSummary, sstable.serializeIndexSummary(contentIndex, m, false)...)
 
 		var contentBf [][]byte = [][]byte{sstable.Bf.Serialize()}
 
@@ -256,9 +257,9 @@ func (sstable *SSTable) writeToSingleFile(records []*model.Record, n int, m int)
 	var dataOffset uint64 = calculateOffset(contentBf, bfOffset)
 	var contentData [][]byte = sstable.serializeData(records)
 	var indexOffset uint64 = calculateOffset(contentData, dataOffset)
-	var contentIndex [][]byte = sstable.serializeIndexSummary(contentData, n)
+	var contentIndex [][]byte = sstable.serializeIndexSummary(contentData, n, sstable.compressionOn)
 	var summaryOffset uint64 = calculateOffset(contentIndex, indexOffset)
-	var contentSummary [][]byte = sstable.serializeIndexSummary(contentIndex, m)
+	var contentSummary [][]byte = sstable.serializeIndexSummary(contentIndex, m, false)
 	var merkleOffset uint64 = calculateOffset(contentSummary, summaryOffset)
 	var contentMerkle [][]byte = [][]byte{sstable.Merkle.Serialize()}
 
