@@ -177,12 +177,14 @@ func (sstable *SSTable) loadBF(separateFile bool, path string) error {
 		if err != nil {
 			return err
 		}
+		defer file.Close()
 		toRead, err = io.ReadAll(file)
 		if err != nil {
 			return err
 		}
 	} else {
 		file = sstable.Data
+		defer file.Close()
 		toRead = make([]byte, int(sstable.DataOffset-sstable.BfOffset))
 		file.Seek(sstable.BfOffset, 0)
 		_, err = io.ReadAtLeast(sstable.Data, toRead, len(toRead))

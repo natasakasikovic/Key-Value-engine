@@ -103,8 +103,21 @@ func Search(key string) (*model.Record, error) {
 		}
 
 		if err != nil {
+			if sstable.Data != nil {
+				sstable.Data.Close()
+			}
+			if sstable.Summary != nil {
+				sstable.Summary.Close()
+			}
+			if sstable.Index != nil {
+				sstable.Index.Close()
+			}
+
 			return nil, err
 		}
+		defer sstable.Data.Close()
+		defer sstable.Index.Close()
+		defer sstable.Summary.Close()
 
 		sstable.Name = dirName
 
