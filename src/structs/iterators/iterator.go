@@ -22,6 +22,7 @@ func NewIteratorGroup(iterators []Iterator) (*IteratorGroup, error) {
 		records:       make([]*model.Record, len(iterators)),
 	}
 
+	//Initialize record array to the first record of each iterator
 	var err error
 	for i := 0; i < group.iteratorCount; i++ {
 		group.records[i], err = group.iterators[i].Next()
@@ -127,6 +128,5 @@ func (iterGroup *IteratorGroup) Next() (*model.Record, error) {
 func (iterGroup *IteratorGroup) Stop() {
 	for i := 0; i < iterGroup.iteratorCount; i++ {
 		iterGroup.iterators[i].Stop()
-		iterGroup.records[i] = nil
 	}
 }
