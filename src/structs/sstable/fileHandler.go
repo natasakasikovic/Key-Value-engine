@@ -224,7 +224,7 @@ func (sstable *SSTable) makeSeparateFiles(path string, records []*model.Record, 
 		var contentSummary [][]byte = [][]byte{minKeyInfoSerialized, maxKeyInfoSerialized}
 
 		var contentData [][]byte = sstable.serializeData(records)
-		var contentIndex [][]byte = sstable.serializeIndexSummary(contentData, n, sstable.compressionOn)
+		var contentIndex [][]byte = sstable.serializeIndexSummary(contentData, n, sstable.CompressionOn)
 		contentSummary = append(contentSummary, sstable.serializeIndexSummary(contentIndex, m, false)...)
 
 		var contentBf [][]byte = [][]byte{sstable.Bf.Serialize()}
@@ -257,7 +257,7 @@ func (sstable *SSTable) writeToSingleFile(records []*model.Record, n int, m int)
 	var dataOffset uint64 = calculateOffset(contentBf, bfOffset)
 	var contentData [][]byte = sstable.serializeData(records)
 	var indexOffset uint64 = calculateOffset(contentData, dataOffset)
-	var contentIndex [][]byte = sstable.serializeIndexSummary(contentData, n, sstable.compressionOn)
+	var contentIndex [][]byte = sstable.serializeIndexSummary(contentData, n, sstable.CompressionOn)
 	var summaryOffset uint64 = calculateOffset(contentIndex, indexOffset)
 	var contentSummary [][]byte = sstable.serializeIndexSummary(contentIndex, m, false)
 	var merkleOffset uint64 = calculateOffset(contentSummary, summaryOffset)

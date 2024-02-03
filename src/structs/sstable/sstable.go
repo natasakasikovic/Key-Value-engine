@@ -23,8 +23,8 @@ type SSTable struct {
 	Bf                                                             *bloomFilter.BloomFilter
 	Merkle                                                         *merkletree.MerkleTree
 	MinKey, MaxKey, Name                                           string
-	dataOffset, indexOffset, summaryOffset, merkleOffset, bfOffset int64
-	compressionOn                                                  bool
+	DataOffset, IndexOffset, SummaryOffset, MerkleOffset, BfOffset int64
+	CompressionOn                                                  bool
 }
 
 // function that creates a new sstable
@@ -56,7 +56,7 @@ func CreateSStable(records []*model.Record, singleFile, compressionOn bool, inde
 	sstable.Name = dirNames[len(dirNames)-1]
 
 	if compressionOn {
-		sstable.compressionOn = true
+		sstable.CompressionOn = true
 	}
 
 	sstable.Bf = bloomFilter.NewBf(len(records), 0.001)
@@ -108,7 +108,7 @@ func Search(key string) (*model.Record, error) {
 		}
 
 		// check if compression is on (if there is a file CompressionInfo.db in folder, then compression is on)
-		sstable.compressionOn, err = emptyDir(COMPRESSION_PATH)
+		sstable.CompressionOn, err = emptyDir(COMPRESSION_PATH)
 
 		sstable.Name = dirName
 
