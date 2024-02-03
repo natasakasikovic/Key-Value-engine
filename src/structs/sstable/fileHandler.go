@@ -13,37 +13,6 @@ import (
 	"github.com/natasakasikovic/Key-Value-engine/src/utils"
 )
 
-// loads from index file, if offset2 is 0 then read until EOF
-// returns bytes read if succesfuly read else returns an error
-func (sstable *SSTable) loadIndex(separateFile bool, offset1 int, offset2 int) ([]byte, error) {
-
-	var data []byte
-	var size int
-	var err error
-
-	if separateFile {
-		data, size, err = sstable.loadIndexSeparate(offset1, offset2)
-	} else {
-		data, size, err = sstable.loadIndexSingle(offset1, offset2)
-	}
-
-	if err != nil {
-		return nil, err
-	}
-
-	toAppend, keySize, err := sstable.readNextIndex()
-
-	if err != nil {
-		return nil, err
-	}
-
-	content := make([]byte, 0, 16+keySize+size)
-	content = append(content, data...)
-	content = append(content, toAppend...)
-
-	return content, nil
-}
-
 // This method needs to read field by field in a block because we don't have that part of the file loaded into the operating memory,
 // and we don't have information on how much we need to load.
 func (sstable *SSTable) readNextIndex() ([]byte, int, error) {
@@ -77,49 +46,6 @@ func (sstable *SSTable) readNextIndex() ([]byte, int, error) {
 	data = append(data, offset...)
 
 	return data, int(keySize), nil
-}
-
-// returns loaded index from separate file between 2 offsets, size of that loaded index and an error if it occured
-func (sstable *SSTable) loadIndexSeparate(offset1, offset2 int) ([]byte, int, error) {
-	var size int
-	var err error
-
-	if offset2 == 0 { // read until EOF
-		fileSize, err := utils.GetFileLength(sstable.Index)
-		if err != nil {
-			return nil, 0, err
-		}
-		size = int(fileSize) - offset1
-	} else { // read between offsets
-		size = offset2 - offset1
-	}
-	data := make([]byte, size)
-	_, err = io.ReadAtLeast(sstable.Index, data, size)
-	if err != nil {
-		return nil, 0, err
-	}
-	return data, size, nil
-}
-
-// returns loaded index from single file between 2 offsets, size of that loaded index and an error if it occured
-func (sstable *SSTable) loadIndexSingle(offset1, offset2 int) ([]byte, int, error) {
-	var size int
-
-	_, err := sstable.Index.Seek(int64(sstable.IndexOffset+int64(offset1)), 0)
-	if err != nil {
-		return nil, 0, err
-	}
-	if offset2 == 0 {
-		size = int(sstable.SummaryOffset - sstable.IndexOffset - int64(offset1))
-	} else {
-		size = offset2 - offset1
-	}
-	data := make([]byte, size)
-	_, err = io.ReadAtLeast(sstable.Index, data, size)
-	if err != nil {
-		return nil, 0, err
-	}
-	return data, size, nil
 }
 
 // returns pointer to SSTable if succesfuly created, otherwise returns an error
@@ -269,38 +195,9 @@ func (sstable *SSTable) loadBF(separateFile bool, path string) error {
 	return nil
 }
 
-// loads summary and returns bytes loaded from file, otherwise returns an error
-func (sstable *SSTable) loadSummary(separateFile bool) ([]byte, error) {
-	var content []byte
-	var err error
-
-	if separateFile {
-		_, err = sstable.Summary.Seek(sstable.SummaryOffset, 0) // in separate files there are headers written, so seek
-		if err != nil {
-			return nil, err
-		}
-		content, err = io.ReadAll(sstable.Summary)
-		if err != nil {
-			return nil, err
-		}
-	} else {
-		var toReadLength int = int(sstable.MerkleOffset - sstable.SummaryOffset)
-		sstable.Summary.Seek(sstable.SummaryOffset, 0)
-		data := make([]byte, toReadLength)
-		_, err = io.ReadAtLeast(sstable.Summary, data, toReadLength)
-		if err != nil {
-			return nil, err
-		}
-		content = data
-	}
-	return content, nil
-}
-
-// makes separate files: data, summary, index;
 // param path: path to the folder where files will be saved;
 // param records: array of pointers to records from memtable;
-// param n: index degree;
-// param m: summary degree;
+// param n: index degree, param m: summary degree;
 // returns error: if it occured during actions connected to files;
 func (sstable *SSTable) makeSeparateFiles(path string, records []*model.Record, n int, m int) error {
 
@@ -419,66 +316,6 @@ func (sstable *SSTable) writeToFile(file *os.File, arr [][]byte) {
 	}
 	file.Write(content)
 	defer file.Close()
-}
-
-// method used in searchData, if sstable is in separate file
-// returns loaded data from separate file between 2 offsets
-func (sstable *SSTable) loadDataSeparate(offset2 int, offset1 int) ([]byte, error) {
-	var err error
-	var data []byte
-
-	if offset2 == 0 {
-		sstable.Data.Seek(int64(offset1), 0)
-		data, err = io.ReadAll(sstable.Data)
-	} else {
-		offset := int(offset2 - offset1)
-		data = make([]byte, offset)
-		sstable.Data.Seek(int64(offset1), 0)
-		_, err = io.ReadAtLeast(sstable.Data, data, offset)
-		if err != nil {
-			return nil, err
-		}
-	}
-	return data, nil
-}
-
-// method used in searchData, if sstable is in single file
-// returns loaded data from single file between 2 offsets
-func (sstable *SSTable) loadDataSingle(offset2 int, offset1 int) ([]byte, error) {
-	var toReadLength int
-	var err error
-	var data []byte
-
-	sstable.Data.Seek(sstable.DataOffset+int64(offset1), 0)
-	if offset2 == 0 {
-		toReadLength = int(sstable.IndexOffset - sstable.DataOffset - int64(offset1))
-	} else {
-		toReadLength = offset2 - offset1
-	}
-	data = make([]byte, toReadLength)
-	_, err = io.ReadAtLeast(sstable.Data, data, toReadLength)
-	if err != nil {
-		return nil, err
-	}
-	return data, nil
-}
-
-// method used in compactions - loads all data because we need to compare records
-func (sstable *SSTable) loadData() ([]byte, error) {
-	var data []byte
-	var err error
-
-	if sstable.DataOffset != 0 {
-		data, err = sstable.loadDataSingle(0, 0)
-	} else {
-		data, err = sstable.loadDataSeparate(0, 0)
-	}
-
-	if err != nil {
-		return nil, err
-	}
-
-	return data, nil
 }
 
 func (sstable *SSTable) loadMerkle(separateFile bool, path string) error {

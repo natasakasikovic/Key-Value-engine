@@ -101,46 +101,68 @@ func Search(key string) (*model.Record, error) {
 		} else {
 			sstable, err = LoadSSTableSeparate(path)
 		}
+
 		if err != nil {
 			return nil, err
 		}
+
 		sstable.Name = dirName
 
-		sstable.loadBF(len(content) != 1, dirName)
-		if !sstable.Bf.Find(key) { // then record is not in this sstable, go to next
+		sstable.loadBF(len(content) != 1, dirName) // first ask bloomfilter
+		if !sstable.Bf.Find(key) {                 // then record is not in this sstable, go to next sstable
 			continue
 		}
-		if key < sstable.MinKey || key > sstable.MaxKey {
+		if key < sstable.MinKey || key > sstable.MaxKey { // if key is not in range of sstable, go to next sstable
 			continue
 		}
 
-		var data []byte
-		data, err = sstable.loadSummary(len(content) != 1)
+		var endingOffset int = sstable.getEndingOffsetSummary(len(content) == 1)
+
+		// offset1 and offset2 are offsets between which we should search index
+		offset1, offset2, err := sstable.searchIndex(sstable.Summary, int(sstable.SummaryOffset), endingOffset, key)
+
 		if err != nil {
 			return nil, err
 		}
 
-		offset1, offset2 := sstable.searchIndex(data, key)
+		if offset2 == 0 { // this means that we need to search until the end of index
+			offset2 = uint64(sstable.SummaryOffset) - uint64(sstable.IndexOffset) // this is the size of index
+		} else { // in other case we need to read next value
+			sstable.Index.Seek(int64(offset2+uint64(sstable.IndexOffset)), 0)
+			_, _, bytesRead, err := readBlock(sstable.Index)
+			if err != nil {
+				return nil, err
+			}
+			offset2 += uint64(bytesRead) // we need to increase offset2, so we can read one more value while searching in index
+		}
 
-		data, err = sstable.loadIndex(len(content) != 1, int(offset1), int(offset2))
+		offset1 += uint64(sstable.IndexOffset) // if it is single file starting index offset is ok
+		offset2 = getEndingOffset(len(content) == 1, sstable.Index, sstable.IndexOffset, sstable.SummaryOffset, int64(offset2))
+
+		// offset1 and offset2 are offsets between which we should search data
+		offset1, offset2, err = sstable.searchIndex(sstable.Index, int(offset1), int(offset2), key)
+
 		if err != nil {
 			return nil, err
 		}
 
-		offset1, offset2 = sstable.searchIndex(data, key)
-		record, err := sstable.searchData(len(content) != 1, int(offset1), int(offset2), key)
+		offset1 += uint64(sstable.DataOffset) // if it is single file starting index offste is okay
+		offset2 = getEndingOffset(len(content) == 1, sstable.Data, sstable.DataOffset, sstable.IndexOffset, int64(offset2))
+
+		record, err := sstable.searchData(len(content) == 1, int(offset1), int(offset2), key)
 
 		if err != nil {
 			return nil, err
-		} else {
-			return record, nil
 		}
 
+		return record, nil
 	}
+
 	return nil, nil
 }
 
 // deletes sstable folder, returns error if it occured during deletion
+// used for compactions
 func (sstable *SSTable) Delete() error {
 
 	sstable.Data.Close()
