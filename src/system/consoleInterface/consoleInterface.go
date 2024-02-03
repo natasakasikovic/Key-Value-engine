@@ -439,6 +439,7 @@ func useBF(engine *engine.Engine) {
 			} else {
 				bf := bloomFilter.Deserialize(value)
 				fmt.Print("Enter the element: ")
+				scanner.Scan()
 				elem := scanner.Text()
 				bf.Insert(elem)
 				serializedBf := bf.Serialize()
@@ -452,6 +453,7 @@ func useBF(engine *engine.Engine) {
 		case 4:
 			scanner := bufio.NewScanner(os.Stdin)
 			fmt.Print("Enter the BloomFilter name: ")
+			scanner.Scan()
 			key := scanner.Text()
 			value, err := engine.Get(key)
 			if value == nil && err == nil {
@@ -461,6 +463,7 @@ func useBF(engine *engine.Engine) {
 			} else {
 				bf := bloomFilter.Deserialize(value)
 				fmt.Print("Enter the element: ")
+				scanner.Scan()
 				elem := scanner.Text()
 				exists := bf.Find(elem)
 				if !exists {
@@ -544,6 +547,7 @@ func useCMS(engine *engine.Engine) {
 		case 2:
 			scanner := bufio.NewScanner(os.Stdin)
 			fmt.Print("Enter the CountMinSketch name: ")
+			scanner.Scan()
 			key := scanner.Text()
 			err := engine.Delete(key)
 			if err == nil {
@@ -555,6 +559,7 @@ func useCMS(engine *engine.Engine) {
 			fmt.Println("insert")
 			scanner := bufio.NewScanner(os.Stdin)
 			fmt.Print("Enter the CountMinSketch name: ")
+			scanner.Scan()
 			key := scanner.Text()
 			value, err := engine.Get(key)
 			if value == nil && err == nil {
@@ -578,6 +583,7 @@ func useCMS(engine *engine.Engine) {
 
 		case 4:
 			fmt.Println("provera ucestalosti")
+
 		case 5:
 			fmt.Println("Exit.")
 			return
