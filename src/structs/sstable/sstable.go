@@ -11,10 +11,11 @@ import (
 )
 
 const (
-	DIR_NAME      = "sstable_"
-	FILE_NAME     = "usertable-data-"
-	PATH          = "../data/sstable"
-	START_COUNTER = "0001"
+	DIR_NAME         = "sstable_"
+	FILE_NAME        = "usertable-data-"
+	PATH             = "../data/sstable"
+	START_COUNTER    = "0001"
+	COMPRESSION_PATH = "../data/CompressionInfo"
 )
 
 type SSTable struct {
@@ -23,6 +24,7 @@ type SSTable struct {
 	Merkle                                                         *merkletree.MerkleTree
 	MinKey, MaxKey, Name                                           string
 	DataOffset, IndexOffset, SummaryOffset, MerkleOffset, BfOffset int64
+	CompressionOn                                                  bool
 }
 
 // function that creates a new sstable
@@ -54,7 +56,7 @@ func CreateSStable(records []*model.Record, singleFile, compressionOn bool, inde
 	sstable.Name = dirNames[len(dirNames)-1]
 
 	if compressionOn {
-		// TODO: implement compression
+		sstable.CompressionOn = true
 	}
 
 	sstable.Bf = bloomFilter.NewBf(len(records), 0.001)
@@ -101,10 +103,12 @@ func Search(key string) (*model.Record, error) {
 		} else {
 			sstable, err = LoadSSTableSeparate(path)
 		}
-
 		if err != nil {
 			return nil, err
 		}
+
+		// check if compression is on (if there is a file CompressionInfo.db in folder, then compression is on)
+		sstable.CompressionOn, err = emptyDir(COMPRESSION_PATH)
 
 		sstable.Name = dirName
 
