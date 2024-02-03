@@ -9,7 +9,7 @@ import (
 func (sstable *SSTable) serializeData(records []*model.Record) [][]byte {
 	var content [][]byte
 	for _, record := range records {
-		content = append(content, record.Serialize(false)) // TODO: change parameter in Serialize based on configuration
+		content = append(content, record.Serialize(sstable.compressionOn))
 	}
 	return content
 }
@@ -27,7 +27,7 @@ func (sstable *SSTable) searchData(isSeparate bool, offset1 int, offset2 int, ke
 	}
 	sstable.data.Seek(int64(offset1), 0)
 	for offset1 < offset2 {
-		record, bytesRead, err := model.Deserialize(sstable.data, false) // TODO: change parameter based on configuration
+		record, bytesRead, err := model.Deserialize(sstable.data, sstable.compressionOn)
 		if err != nil {
 			return nil, err
 		}

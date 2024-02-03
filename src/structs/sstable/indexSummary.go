@@ -43,12 +43,12 @@ func (sstable *SSTable) searchIndex(file *os.File, offset1 int, offset2 int, key
 	return targetOffset1, targetOffset2, nil
 }
 
-func (sstable *SSTable) serializeIndexSummary(content [][]byte, n int) [][]byte {
+func (sstable *SSTable) serializeIndexSummary(content [][]byte, n int, compressed bool) [][]byte {
 	var retVal [][]byte
 	var offset uint64 = 0
 	for i := 0; i < len(content); i++ {
 		if i%n == 0 {
-			keySize, key := getKey(content[i])
+			keySize, key := getKey(content[i], compressed)
 			var buffer bytes.Buffer
 			binary.Write(&buffer, binary.BigEndian, keySize)
 			binary.Write(&buffer, binary.BigEndian, []byte(key))

@@ -17,13 +17,23 @@ func calculateOffset(content [][]byte, offset uint64) uint64 {
 }
 
 // gets key - made to read key from records, but also from index block
-func getKey(item []byte) (uint64, string) {
+func getKey(item []byte, compressionOn bool) (uint64, string) {
+	if compressionOn {
+		return getKeyCompressed(item)
+	}
 	var keySize uint64
 	buffer := bytes.NewReader(item)
 	binary.Read(buffer, binary.BigEndian, &keySize)
 	keyBytes := make([]byte, keySize)
 	buffer.Read(keyBytes)
 	return keySize, string(keyBytes)
+}
+
+// if the key is compressed, we need to read it differently
+func getKeyCompressed(item []byte) (uint64, string) {
+	keySize, n := binary.Uvarint(item)
+	key := string(item[n : n+int(keySize)])
+	return keySize, key
 }
 
 func uint64ToBytes(value uint64) []byte {
@@ -96,4 +106,13 @@ func readBlock(file *os.File) (string, uint64, int, error) {
 
 	totalSize := 16 + int(keySize)
 	return key, offset, totalSize, nil
+}
+
+// checks if folder is empty
+func emptyDir(path string) (bool, error) {
+	dirContent, err := utils.GetDirContent(path)
+	if err != nil {
+		return false, err
+	}
+	return len(dirContent) != 0, nil
 }

@@ -23,7 +23,7 @@ type Record struct {
 
 func (r *Record) Serialize(compressionOn bool) []byte {
 	if compressionOn {
-		return serializeWithCompression(r)
+		return SerializeWithCompression(r)
 	}
 	var buffer bytes.Buffer
 	binary.Write(&buffer, binary.BigEndian, r.KeySize)
@@ -123,7 +123,7 @@ func Deserialize(file *os.File, compressionOn bool) (*Record, uint64, error) {
 }
 
 // serializes a Record with variable-length fields, returning the resulting byte slice.
-func serializeWithCompression(r *Record) []byte {
+func SerializeWithCompression(r *Record) []byte {
 	var buf bytes.Buffer
 
 	utils.PutUvarint(&buf, r.KeySize)
