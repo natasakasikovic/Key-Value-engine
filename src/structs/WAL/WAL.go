@@ -26,6 +26,8 @@ const (
 	KEY_SIZE_START   = TOMBSTONE_START + TOMBSTONE_SIZE
 	VALUE_SIZE_START = KEY_SIZE_START + KEY_SIZE_SIZE
 	KEY_START        = VALUE_SIZE_START + VALUE_SIZE_SIZE
+	//keySize := binary.BigEndian.Uint64(data[KEY_SIZE_START : KEY_SIZE_START+KEY_SIZE_SIZE])
+	//valueSize := binary.BigEndian.Uint64(data[VALUE_SIZE_START : VALUE_SIZE_START+VALUE_SIZE_SIZE])
 )
 const (
 	FILE_NAME = "log_"
@@ -254,10 +256,10 @@ func (wal *WAL) ReadRecords() error {
 				}
 				break
 			} else {
-				keySize := binary.BigEndian.Uint64(data[KEY_SIZE_START : KEY_SIZE_START+KEY_SIZE_SIZE])
-				valueSize := binary.BigEndian.Uint64(data[VALUE_SIZE_START : VALUE_SIZE_START+VALUE_SIZE_SIZE])
+				keySize := binary.BigEndian.Uint64(data[offset+KEY_SIZE_START : offset+KEY_SIZE_START+KEY_SIZE_SIZE])
+				valueSize := binary.BigEndian.Uint64(data[offset+VALUE_SIZE_START : offset+VALUE_SIZE_START+VALUE_SIZE_SIZE])
 				//Sad kad znamo celu duzinu ako je ostalo vise bajtova nego duzina recorda opet otvaraj novi
-				if uint64(bytesLeft) <= 29+keySize+valueSize+2 && i != len(wal.segmentNames)-1 {
+				if uint64(bytesLeft) < 29+keySize+valueSize {
 					bytesToTransfer = make([]byte, bytesLeft)
 					copy(bytesToTransfer, data[offset:])
 					if err != nil {
@@ -315,6 +317,7 @@ func (wal *WAL) ClearLog() error {
 	}
 	wal.lowWaterMark = 1
 	wal.memtableLowWatermark[wal.currentMemtable] = 1
+	wal.bytesFromLastSegment = wal.memtableBytesFromLastSegment[wal.currentMemtable]
 	err = wal.SetBytesFromLastSegmentFromFile()
 	if err != nil {
 		return err
@@ -334,11 +337,12 @@ func (wal *WAL) UpdateWatermark(didFlush bool) error {
 	}
 	wal.memtableBytesFromLastSegment[wal.currentMemtable] = fileLength
 
+	wal.currentMemtable = (wal.currentMemtable + 1) % wal.numOfMemtables
 	if didFlush {
 		wal.lowWaterMark = wal.memtableLowWatermark[wal.currentMemtable]
 		wal.bytesFromLastSegment = wal.memtableBytesFromLastSegment[wal.currentMemtable]
 	}
-	wal.currentMemtable = (wal.currentMemtable + 1) % wal.numOfMemtables
+
 	err = wal.SetBytesFromLastSegmentFromFile()
 	if err != nil {
 		return err
