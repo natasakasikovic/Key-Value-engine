@@ -418,6 +418,7 @@ func useBF(engine *engine.Engine) {
 		case 2:
 			scanner := bufio.NewScanner(os.Stdin)
 			fmt.Print("Enter the BloomFilter name: ")
+			scanner.Scan()
 			key := scanner.Text()
 			err := engine.Delete(key)
 			if err == nil {
@@ -428,6 +429,7 @@ func useBF(engine *engine.Engine) {
 		case 3:
 			scanner := bufio.NewScanner(os.Stdin)
 			fmt.Print("Enter the BloomFilter name: ")
+			scanner.Scan()
 			key := scanner.Text()
 			value, err := engine.Get(key)
 			if value == nil && err == nil {
@@ -477,6 +479,14 @@ func useBF(engine *engine.Engine) {
 	}
 }
 func useCMS(engine *engine.Engine) {
+	records, err := prefixScan(engine.Config.CompressionOn, CMS_KEY)
+	if err != nil || len(records) == 0 {
+		fmt.Println("There are no existing instances of CountMinSketch.")
+	} else if records != nil && err == nil {
+		for _, record := range records {
+			fmt.Printf("record: %v\n", record)
+		}
+	}
 	scanner := bufio.NewScanner(os.Stdin)
 	for {
 		fmt.Println("\nCountMinSketch")
@@ -543,6 +553,29 @@ func useCMS(engine *engine.Engine) {
 			}
 		case 3:
 			fmt.Println("insert")
+			scanner := bufio.NewScanner(os.Stdin)
+			fmt.Print("Enter the CountMinSketch name: ")
+			key := scanner.Text()
+			value, err := engine.Get(key)
+			if value == nil && err == nil {
+				fmt.Println("CountMinSketch does not exist.")
+			} else if err != nil {
+				fmt.Printf("err: %v\n", err)
+			} else {
+				cms := countMinSketch.Deserialize(value)
+				fmt.Print("Enter the element: ")
+				scanner.Scan()
+				elem := scanner.Text()
+				cms.Insert(elem)
+				serializedCMS := cms.Serialize()
+				err := engine.Put(key, serializedCMS)
+				if err == nil {
+					fmt.Println("Request Successfully Completed")
+				} else {
+					fmt.Printf("err: %v\n", err)
+				}
+			}
+
 		case 4:
 			fmt.Println("provera ucestalosti")
 		case 5:
