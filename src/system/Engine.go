@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"log"
 	"os"
-	"strings"
 	"time"
 
 	config2 "github.com/natasakasikovic/Key-Value-engine/src/config"
@@ -16,14 +15,6 @@ import (
 	"github.com/natasakasikovic/Key-Value-engine/src/structs/WAL"
 	"github.com/natasakasikovic/Key-Value-engine/src/structs/memtable"
 	"github.com/natasakasikovic/Key-Value-engine/src/structs/sstable"
-)
-
-const (
-	BF_KEY  = "bloomFilter"
-	CMS_KEY = "countMinSketch"
-	HLL_KEY = "hyperLogLog"
-	SH_KEY  = "simhash"
-	TB_KEY  = "tokenBucket"
 )
 
 type Engine struct {
@@ -59,9 +50,7 @@ func NewEngine() (*Engine, error) {
 
 // Get Checks Memtable, Cache, BloomFilter and SSTable for given key
 func (engine *Engine) Get(key string) ([]byte, error) {
-	if strings.HasPrefix(key, BF_KEY) || strings.HasPrefix(key, CMS_KEY) || strings.HasPrefix(key, HLL_KEY) || strings.HasPrefix(key, SH_KEY) || strings.HasPrefix(key, TB_KEY) {
-		return nil, errors.New("key must not begin with system prefix")
-	}
+
 	if !engine.TokenBucket.IsRequestAvailable() {
 		return nil, errors.New("wait until sending new request")
 	}
@@ -85,9 +74,7 @@ func (engine *Engine) Get(key string) ([]byte, error) {
 
 // Put Adds record to WAL and to Memtable with tombstone 0
 func (engine *Engine) Put(key string, value []byte) error {
-	if strings.HasPrefix(key, BF_KEY) || strings.HasPrefix(key, CMS_KEY) || strings.HasPrefix(key, HLL_KEY) || strings.HasPrefix(key, SH_KEY) || strings.HasPrefix(key, TB_KEY) {
-		return errors.New("key must not begin with system prefix")
-	}
+
 	if !engine.TokenBucket.IsRequestAvailable() {
 		return errors.New("wait until sending new request")
 	}
@@ -100,9 +87,6 @@ func (engine *Engine) Put(key string, value []byte) error {
 
 // Delete Adds record to WAL and to Memtable with tombstone 1
 func (engine *Engine) Delete(key string) error {
-	if strings.HasPrefix(key, BF_KEY) || strings.HasPrefix(key, CMS_KEY) || strings.HasPrefix(key, HLL_KEY) || strings.HasPrefix(key, SH_KEY) || strings.HasPrefix(key, TB_KEY) {
-		return errors.New("key must not begin with system prefix")
-	}
 	if !engine.TokenBucket.IsRequestAvailable() {
 		return errors.New("wait until sending new request")
 	}
