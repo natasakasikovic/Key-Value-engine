@@ -38,6 +38,11 @@ func CreateSStable(records []*model.Record, singleFile, compressionOn bool, inde
 		return nil, err
 	}
 
+	// for _, record := range records {
+	// 	record.KeySize = uint64(len(record.Key))
+	// 	record.ValueSize = uint64(len(record.Value))
+	// }
+
 	var path string
 	if len(dirNames) == 0 {
 		path = fmt.Sprintf("%s/%s%s", PATH, DIR_NAME, START_COUNTER)

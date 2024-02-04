@@ -131,10 +131,13 @@ func Put(key string, value []byte, timestamp uint64, tombstone byte) (bool, bool
 
 	}
 	memValue := model.Record{
+		Crc:       model.CRC32(append([]byte(key), value...)),
 		Value:     value,
 		Tombstone: tombstone,
 		Timestamp: timestamp,
 		Key:       key,
+		KeySize:   uint64(len(key)),
+		ValueSize: uint64(len(value)),
 	}
 	//put data to memtable
 	memtable.Data.Insert(key, memValue)

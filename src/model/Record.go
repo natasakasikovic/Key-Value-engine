@@ -141,10 +141,10 @@ func Deserialize(file *os.File, compressionOn bool, compressionMap map[string]ui
 		record.Value = []byte{}
 	}
 
-	// crcChech := append([]byte(record.Key), record.Value...)
-	// if CRC32(crcChech) != record.Crc {
-	// 	return nil, read, errors.New("not valid record")
-	// }
+	crcChech := append([]byte(record.Key), record.Value...)
+	if CRC32(crcChech) != record.Crc {
+		return nil, read, errors.New("not valid record")
+	}
 
 	return &record, read, nil
 }
@@ -223,10 +223,10 @@ func deserializeWithCompression(file *os.File, compressionMap map[string]uint64)
 		record.Value = valueBuf
 	}
 
-	// crcChech := append([]byte(record.Key), record.Value...)
-	// if CRC32(crcChech) != record.Crc {
-	// 	return nil, totalBytesRead, errors.New("not valid record")
-	// }
+	crcChech := append([]byte(record.Key), record.Value...)
+	if CRC32(crcChech) != record.Crc {
+		return nil, totalBytesRead, errors.New("not valid record")
+	}
 
 	return record, totalBytesRead, nil
 }

@@ -2,7 +2,9 @@ package system
 
 import (
 	"errors"
+	"fmt"
 	"log"
+	"os"
 	"time"
 
 	config2 "github.com/natasakasikovic/Key-Value-engine/src/config"
@@ -11,6 +13,7 @@ import (
 	lsmtree "github.com/natasakasikovic/Key-Value-engine/src/structs/LSMTree"
 	"github.com/natasakasikovic/Key-Value-engine/src/structs/TokenBucket"
 	"github.com/natasakasikovic/Key-Value-engine/src/structs/WAL"
+	hashmap "github.com/natasakasikovic/Key-Value-engine/src/structs/hashMap"
 	"github.com/natasakasikovic/Key-Value-engine/src/structs/memtable"
 	"github.com/natasakasikovic/Key-Value-engine/src/structs/sstable"
 	"github.com/natasakasikovic/Key-Value-engine/src/utils"
@@ -167,6 +170,25 @@ func (engine *Engine) Commit(key string, value []byte, tombstone byte) error {
 		}
 		engine.LSMTree.AddSSTable(sstable)
 		engine.Cache.UpdateKeys(records)
+		// engine.Wal.ClearLog()
 	}
 	return nil
+}
+
+func (engine *Engine) Exit() {
+	if engine.Config.CompressionOn {
+		fmt.Println(engine.CompressionMap)
+		serializedMap := hashmap.Serialize(engine.CompressionMap)
+		file, err := os.Create("../data/compressionInfo/usertable-data-CompressionInfo.db")
+		if err != nil {
+			fmt.Println(err)
+			return
+		}
+		defer file.Close()
+
+		_, err = file.Write(serializedMap)
+		if err != nil {
+			fmt.Println(err)
+		}
+	}
 }
