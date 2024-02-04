@@ -1,5 +1,5 @@
 {
-    "wal_size":100,
+    "wal_size":10000,
     "memtable_size":100,
     "memtable_structure":"skipList",
     "memtable_max_instances": 3,
@@ -8,7 +8,7 @@
     "lru_cache_max_size": 5,
     "index_degree": 5,
     "summary_degree": 5,
-    "ss_table_in_same_file": false,
+    "ss_table_in_same_file": true,
     "compression_on": true,
     "lsm_tree_max_depth": 7,
     "number_of_tokens": 100000,
