@@ -92,7 +92,7 @@ func (hll HLL) Serialize() []byte {
 	return bytes
 }
 
-func (hll HLL) Deserialize(bytes []byte) *HLL {
+func Deserialize(bytes []byte) *HLL {
 
 	p := uint32(binary.BigEndian.Uint32(bytes[0:4]))
 	m := uint64(binary.BigEndian.Uint64(bytes[4:12]))

@@ -65,11 +65,13 @@ func LoadSStableSingle(p string) (*SSTable, error) {
 	var minKeyLength uint64
 	err = binary.Read(file, binary.BigEndian, &minKeyLength)
 	if err != nil {
+		file.Close()
 		return nil, err
 	}
 	minKeyBytes := make([]byte, minKeyLength)
 	_, err = file.Read(minKeyBytes)
 	if err != nil {
+		file.Close()
 		return nil, err
 	}
 	sstable.MinKey = string(minKeyBytes)
@@ -78,11 +80,13 @@ func LoadSStableSingle(p string) (*SSTable, error) {
 	var maxKeyLength uint64
 	err = binary.Read(file, binary.BigEndian, &maxKeyLength)
 	if err != nil {
+		file.Close()
 		return nil, err
 	}
 	maxKeyBytes := make([]byte, maxKeyLength)
 	_, err = file.Read(maxKeyBytes)
 	if err != nil {
+		file.Close()
 		return nil, err
 	}
 	sstable.MaxKey = string(maxKeyBytes)
@@ -92,6 +96,7 @@ func LoadSStableSingle(p string) (*SSTable, error) {
 	for i := 0; i < 5; i++ {
 		err = binary.Read(file, binary.BigEndian, &offsets[i])
 		if err != nil {
+			file.Close()
 			return nil, err
 		}
 	}
@@ -119,12 +124,14 @@ func LoadSSTableSeparate(path string) (*SSTable, error) {
 	var minKeyLength int64
 	err = binary.Read(summaryFile, binary.BigEndian, &minKeyLength)
 	if err != nil {
+		summaryFile.Close()
 		return nil, err
 	}
 
 	minKeyBytes := make([]byte, minKeyLength)
 	_, err = summaryFile.Read(minKeyBytes)
 	if err != nil {
+		summaryFile.Close()
 		return nil, err
 	}
 
@@ -134,12 +141,14 @@ func LoadSSTableSeparate(path string) (*SSTable, error) {
 	var maxKeyLength int64
 	err = binary.Read(summaryFile, binary.BigEndian, &maxKeyLength)
 	if err != nil {
+		summaryFile.Close()
 		return nil, err
 	}
 
 	maxKeyBytes := make([]byte, maxKeyLength)
 	_, err = summaryFile.Read(maxKeyBytes)
 	if err != nil {
+		summaryFile.Close()
 		return nil, err
 	}
 
@@ -148,6 +157,7 @@ func LoadSSTableSeparate(path string) (*SSTable, error) {
 	// set index file
 	indexFile, err := os.Open(fmt.Sprintf("%s%s", path, "Index.db"))
 	if err != nil {
+		summaryFile.Close()
 		return nil, err
 	}
 	sstable.Index = indexFile
@@ -155,6 +165,8 @@ func LoadSSTableSeparate(path string) (*SSTable, error) {
 	// set data file
 	dataFile, err := os.Open(fmt.Sprintf("%s%s", path, "Data.db"))
 	if err != nil {
+		summaryFile.Close()
+		indexFile.Close()
 		return nil, err
 	}
 	sstable.Data = dataFile
@@ -178,6 +190,7 @@ func (sstable *SSTable) loadBF(separateFile bool, path string) error {
 		if err != nil {
 			return err
 		}
+		defer file.Close()
 		toRead, err = io.ReadAll(file)
 		if err != nil {
 			return err

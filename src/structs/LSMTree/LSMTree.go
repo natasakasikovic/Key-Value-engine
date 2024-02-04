@@ -24,7 +24,67 @@ type LSMTree struct {
 	sstableCompressionOn bool
 }
 
-func NewLSMTree(maxDepth uint32, compactionType string, firstLevelSize uint32, growthFactor uint32,
+func isSSTableInSingleFile(tableName string) (bool, error) {
+	//Check if the sstable folder exists
+	_, err := os.ReadDir(fmt.Sprintf("%s/%s", sstable.PATH, tableName))
+
+	if os.IsNotExist(err) {
+		return false, err
+	}
+
+	//sstableFolder - Array of the names of all files in the sstable folder
+	sstableFolder, err := utils.GetDirContent(fmt.Sprintf("%s/%s", sstable.PATH, tableName))
+	if err != nil {
+		return false, err
+	}
+
+	if len(sstableFolder) > 1 {
+		return false, nil
+	} else {
+		return true, nil
+	}
+}
+
+// Loads all sstables from the disk into an array
+// Returns an error on fail
+// The sstables are closed on load
+func loadAllSStables() ([]*sstable.SSTable, error) {
+	//Array of the names of all sstables
+	sstableNames, err := utils.GetDirContent(sstable.PATH)
+	if err != nil {
+		return make([]*sstable.SSTable, 0), err
+	}
+
+	var tables []*sstable.SSTable = make([]*sstable.SSTable, 0)
+	for i := 0; i < len(sstableNames); i++ {
+		var table *sstable.SSTable
+		isSingleFile, err := isSSTableInSingleFile(sstableNames[i])
+		if err != nil {
+			return make([]*sstable.SSTable, 0), err
+		}
+
+		var path string = fmt.Sprintf("%s/%s", sstable.PATH, sstableNames[i])
+
+		if isSingleFile {
+			table, err = sstable.LoadSStableSingle(path)
+		} else {
+			table, err = sstable.LoadSSTableSeparate(path)
+		}
+		if err != nil {
+			return make([]*sstable.SSTable, 0), err
+		}
+
+		table.Name = sstableNames[i]
+		table.Data.Close()
+		table.Index.Close()
+		table.Summary.Close()
+		tables = append(tables, table)
+	}
+
+	return tables, nil
+}
+
+func makeEmptyLSMTree(maxDepth uint32, compactionType string, firstLevelSize uint32, growthFactor uint32,
 	sstableIndexDegree uint32, sstableSummaryDegree uint32, sstableInSameFile bool, sstableCompressionOn bool) *LSMTree {
 	var tree *LSMTree = &LSMTree{
 		maxDepth:             maxDepth,
@@ -41,7 +101,32 @@ func NewLSMTree(maxDepth uint32, compactionType string, firstLevelSize uint32, g
 	for i := 0; i < int(maxDepth); i++ {
 		tree.sstableArrays[i] = make([]*sstable.SSTable, 0)
 	}
+
 	return tree
+}
+
+// Creates a new LSM Tree and loads existing sstables into it
+func NewLSMTree(maxDepth uint32, compactionType string, firstLevelSize uint32, growthFactor uint32,
+	sstableIndexDegree uint32, sstableSummaryDegree uint32, sstableInSameFile bool, sstableCompressionOn bool) (*LSMTree, error) {
+	var tree *LSMTree = makeEmptyLSMTree(
+		maxDepth,
+		compactionType,
+		firstLevelSize,
+		growthFactor,
+		sstableIndexDegree,
+		sstableSummaryDegree,
+		sstableInSameFile,
+		sstableCompressionOn)
+
+	tables, err := loadAllSStables()
+	if err != nil {
+		return nil, err
+	}
+	tree.sstableArrays[0] = tables
+	tree.checkLevel(0)
+
+	tree.SaveToFile()
+	return tree, nil
 }
 
 const LSM_PATH string = "../data/LSMTree.json"
@@ -49,8 +134,8 @@ const LSM_PATH string = "../data/LSMTree.json"
 // Returns a pointer to the lsm tree if loaded successfuly
 // Otherwise, returns nil
 func LoadLSMTreeFromFile(maxDepth uint32, compactionType string, firstLevelSize uint32, growthFactor uint32,
-	sstableIndexDegree uint32, sstableSummaryDegree uint32, sstableInSameFile bool, sstableCompressionOn bool) *LSMTree {
-	var lsm LSMTree = *NewLSMTree(maxDepth,
+	sstableIndexDegree uint32, sstableSummaryDegree uint32, sstableInSameFile bool, sstableCompressionOn bool) (*LSMTree, error) {
+	lsm := makeEmptyLSMTree(maxDepth,
 		compactionType,
 		firstLevelSize,
 		growthFactor,
@@ -62,23 +147,40 @@ func LoadLSMTreeFromFile(maxDepth uint32, compactionType string, firstLevelSize 
 	jsonData, err := os.ReadFile(LSM_PATH)
 
 	if err != nil {
-		return nil
+		return nil, err
 	}
 
 	var sstableNames [][]string
 	err = json.Unmarshal(jsonData, &sstableNames)
 	if err != nil {
-		return nil
+		return nil, err
 	}
 
+	//Get the sstable folder
+	//We will use it to check how many sstables exist
+	sstableFolder, err := utils.GetDirContent(sstable.PATH)
+	if err != nil {
+		return nil, err
+	}
+
+	//Count how many sstables have been loaded
+	sstableCounter := 0
 	for i := 0; i < int(lsm.maxDepth); i++ {
 		for j := 0; j < len(sstableNames[i]); j++ {
 			var dirName = sstableNames[i][j]
 			var path = fmt.Sprintf("%s/%s", sstable.PATH, dirName)
+
+			//Check if the sstable folder exists
+			_, err := os.ReadDir(fmt.Sprintf("%s/%s", sstable.PATH, dirName))
+
+			if os.IsNotExist(err) {
+				return nil, err
+			}
+
 			content, err := utils.GetDirContent(path) // get content of sstable, so we can check if sstable is a single file or in seperate files
 
 			if err != nil {
-				return nil
+				return nil, err
 			}
 
 			var table *sstable.SSTable
@@ -90,13 +192,19 @@ func LoadLSMTreeFromFile(maxDepth uint32, compactionType string, firstLevelSize 
 			}
 
 			if err != nil {
-				return nil
+				return nil, err
 			}
 
 			table.Name = dirName
 			closeSSTable(table)
 			lsm.sstableArrays[i] = append(lsm.sstableArrays[i], table)
+			sstableCounter += 1
 		}
+	}
+
+	//If we didn't load all the sstables, FAIL
+	if len(sstableFolder) != sstableCounter {
+		return nil, err
 	}
 
 	//Check if all levels are sorted if the compaction type is leveled
@@ -105,13 +213,13 @@ func LoadLSMTreeFromFile(maxDepth uint32, compactionType string, firstLevelSize 
 			for j := 0; j < len(lsm.sstableArrays[i])-1; j++ {
 				//If the left table contains a key larger than in the right table, the lsm is not leveled
 				if lsm.sstableArrays[i][j].MaxKey >= lsm.sstableArrays[i][j+1].MinKey {
-					return nil
+					return nil, err
 				}
 			}
 		}
 	}
 
-	return &lsm
+	return lsm, nil
 }
 
 func (tree *LSMTree) SaveToFile() error {
@@ -142,19 +250,6 @@ func (tree *LSMTree) SaveToFile() error {
 	return nil
 }
 
-func isSSTableInSingleFile(table *sstable.SSTable) (bool, error) {
-	sstableFolder, err := utils.GetDirContent(fmt.Sprintf("%s/%s", sstable.PATH, table.Name)) // dirContent - names of all sstables dirs
-	if err != nil {
-		return false, err
-	}
-
-	if len(sstableFolder) > 1 {
-		return false, nil
-	} else {
-		return true, nil
-	}
-}
-
 // Updates the os.File pointers of the sstables after renaming
 func (tree *LSMTree) reopenSSTables() error {
 	var err error = nil
@@ -166,7 +261,7 @@ func (tree *LSMTree) reopenSSTables() error {
 			closeSSTable(table)
 
 			var singleFile bool
-			singleFile, err = isSSTableInSingleFile(table)
+			singleFile, err = isSSTableInSingleFile(table.Name)
 			if err != nil {
 				return err
 			}
@@ -478,7 +573,13 @@ func (tree *LSMTree) checkLevel(levelIndex uint32) error {
 		if err != nil {
 			return err
 		}
-		return tree.checkLevel(levelIndex + 1)
+
+		err = tree.checkLevel(levelIndex + 1)
+		if err != nil {
+			return err
+		}
+
+		return tree.checkLevel(0)
 	}
 	return nil
 }
@@ -486,5 +587,6 @@ func (tree *LSMTree) checkLevel(levelIndex uint32) error {
 func (tree *LSMTree) AddSSTable(sstable *sstable.SSTable) error {
 	closeSSTable(sstable)
 	tree.sstableArrays[0] = append(tree.sstableArrays[0], sstable)
+	tree.SaveToFile()
 	return tree.checkLevel(0)
 }

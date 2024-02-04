@@ -110,8 +110,21 @@ func Search(key string, compressionMap map[string]uint64) (*model.Record, error)
 			sstable, err = LoadSSTableSeparate(path)
 		}
 		if err != nil {
+			if sstable.Data != nil {
+				sstable.Data.Close()
+			}
+			if sstable.Summary != nil {
+				sstable.Summary.Close()
+			}
+			if sstable.Index != nil {
+				sstable.Index.Close()
+			}
+
 			return nil, err
 		}
+		defer sstable.Data.Close()
+		defer sstable.Index.Close()
+		defer sstable.Summary.Close()
 
 		// check if compression is on (if there is a file CompressionInfo.db in folder, then compression is on
 		retVal, err := utils.EmptyDir(COMPRESSION_PATH)
