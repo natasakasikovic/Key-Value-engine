@@ -38,11 +38,6 @@ func CreateSStable(records []*model.Record, singleFile, compressionOn bool, inde
 		return nil, err
 	}
 
-	// for _, record := range records {
-	// 	record.KeySize = uint64(len(record.Key))
-	// 	record.ValueSize = uint64(len(record.Value))
-	// }
-
 	var path string
 	if len(dirNames) == 0 {
 		path = fmt.Sprintf("%s/%s%s", PATH, DIR_NAME, START_COUNTER)
@@ -93,7 +88,6 @@ func CreateSStable(records []*model.Record, singleFile, compressionOn bool, inde
 // returns nil as first param if record is not found
 // second param returns error if it occured during actions connected to files, otherwise returns nil
 func Search(key string, compressionMap map[string]uint64) (*model.Record, error) {
-	fmt.Println("searching for key in sstable: ", key)
 	dirContent, err := utils.GetDirContent(PATH) // dirContent - names of all sstables dirs
 	if err != nil {
 		return nil, err

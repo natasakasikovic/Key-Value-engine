@@ -115,7 +115,7 @@ func (engine *Engine) Get(key string) ([]byte, error) {
 	}
 
 	record, err := sstable.Search(key, engine.CompressionMap)
-	if err == nil {
+	if err == nil && record != nil {
 		value = record.Value
 		engine.Cache.Add(key, value)
 		return value, nil
@@ -170,14 +170,12 @@ func (engine *Engine) Commit(key string, value []byte, tombstone byte) error {
 		}
 		engine.LSMTree.AddSSTable(sstable)
 		engine.Cache.UpdateKeys(records)
-		// engine.Wal.ClearLog()
 	}
 	return nil
 }
 
 func (engine *Engine) Exit() {
 	if engine.Config.CompressionOn {
-		fmt.Println(engine.CompressionMap)
 		serializedMap := hashmap.Serialize(engine.CompressionMap)
 		file, err := os.Create("../data/compressionInfo/usertable-data-CompressionInfo.db")
 		if err != nil {

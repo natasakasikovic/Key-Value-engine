@@ -76,7 +76,6 @@ func (skipList *SkipList) Insert(key string, val model.Record) {
 
 	height := roll(skipList.maxHeight) //pseudo-random height (defines on how many levels to add new node)
 
-	// newNode := &node{key: key, val: val} // creating new node
 	newNode := newNode(key, val, int32(skipList.maxHeight))
 	// go through the skip list to the level where we insert a new node
 	for level := 0; level < height; level++ {

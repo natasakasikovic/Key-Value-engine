@@ -281,7 +281,6 @@ func (wal *WAL) ReadRecords() error {
 							return err
 						}
 					}
-					fmt.Println(record)
 
 					offset += bytesRead
 				}
