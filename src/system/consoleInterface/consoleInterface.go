@@ -4,6 +4,9 @@ import (
 	"bufio"
 	"encoding/binary"
 	"fmt"
+	"github.com/natasakasikovic/Key-Value-engine/src/structs/sstable"
+	"github.com/natasakasikovic/Key-Value-engine/src/utils"
+	"log"
 	"os"
 	"strconv"
 	"strings"
@@ -788,8 +791,49 @@ func useSimHash(engine *engine.Engine) {
 		}
 	}
 }
-func useMerkle() {
-	fmt.Println("merkle stablo")
+func useMerkle(engine *engine.Engine) {
+	fmt.Println("Please enter path of sstable:")
+	scanner := bufio.NewScanner(os.Stdin)
+	scanner.Scan()
+	path := scanner.Text()
+	sstablePath := fmt.Sprintf("data/sstable/%s", path)
+	fmt.Println(sstablePath)
+	content, _ := utils.GetDirContent(sstablePath)
+	var sstableLoaded *sstable.SSTable
+	var err error
+	if len(content) == 1 {
+		sstableLoaded, err = sstable.LoadSStableSingle(path)
+		if err != nil {
+			log.Fatal(err)
+		}
+	} else {
+		sstableLoaded, err = sstable.LoadSSTableSeparate(path)
+		if err != nil {
+			log.Fatal(err)
+		}
+	}
+	sstableLoaded.LoadMerkle(len(content) == 1, sstablePath)
+
+	// load data
+	offset1 := sstableLoaded.DataOffset
+	offset2 := sstableLoaded.IndexOffset
+
+	var records []*model.Record
+
+	for offset1 < offset2 {
+		record, bytesRead, _ := model.Deserialize(sstableLoaded.Data, engine.Config.CompressionOn, engine.CompressionMap)
+		records = append(records, record)
+		offset1 += int64(bytesRead)
+	}
+
+	var bytesToCheck [][]byte
+	for _, record := range records {
+		bytesToAppend, _ := record.Serialize(engine.Config.CompressionOn, engine.CompressionMap)
+		bytesToCheck = append(bytesToCheck, bytesToAppend)
+	}
+
+	response, _ := sstableLoaded.Merkle.VerifyTree(bytesToCheck)
+	fmt.Println(response)
 }
 func probStructs(engine *engine.Engine) {
 	scanner := bufio.NewScanner(os.Stdin)
@@ -828,7 +872,7 @@ func probStructs(engine *engine.Engine) {
 
 	}
 }
-func startEngine() {
+func StartEngine() {
 	engine, err := engine.NewEngine()
 	if err != nil {
 		fmt.Printf("err: %v\n", err)
@@ -843,7 +887,8 @@ func startEngine() {
 		fmt.Println("3 --> Delete")
 		fmt.Println("4 --> Use probabilistic structures")
 		fmt.Println("5 --> Use Merkle Tree")
-		fmt.Println("6 --> Exit")
+		fmt.Println("6 --> Clear Log")
+		fmt.Println("7 --> Exit")
 
 		scanner.Scan()
 		input := scanner.Text()
@@ -868,9 +913,15 @@ func startEngine() {
 			//Use probabilistic structures
 			probStructs(engine)
 		case 5:
-			useMerkle()
+			useMerkle(engine)
 		case 6:
+			err := engine.Wal.ClearLog()
+			if err != nil {
+				log.Fatal(err)
+			}
+		case 7:
 			fmt.Println("Exit program.")
+			engine.Exit()
 			return
 		default:
 			fmt.Println("Wrong input. Please try again.")

@@ -344,7 +344,7 @@ func (sstable *SSTable) writeToFile(file *os.File, arr [][]byte) {
 	defer file.Close()
 }
 
-func (sstable *SSTable) loadMerkle(separateFile bool, path string) error {
+func (sstable *SSTable) LoadMerkle(separateFile bool, path string) error {
 	var file *os.File
 	var err error
 	var toRead []byte
