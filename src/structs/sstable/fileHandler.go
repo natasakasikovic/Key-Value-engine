@@ -200,13 +200,13 @@ func (sstable *SSTable) loadBF(separateFile bool, path string) error {
 // param records: array of pointers to records from memtable;
 // param n: index degree, param m: summary degree;
 // returns error: if it occured during actions connected to files;
-func (sstable *SSTable) makeSeparateFiles(path string, records []*model.Record, n int, m int) error {
+func (sstable *SSTable) makeSeparateFiles(path string, records []*model.Record, n int, m int, compressionMap map[string]uint64) error {
 
-	data, _ := makeFile(path, "Data")
-	summary, _ := makeFile(path, "Summary")
-	index, _ := makeFile(path, "Index")
-	filter, _ := makeFile(path, "Filter")
-	merkle, _ := makeFile(path, "Metadata")
+	data, _ := MakeFile(path, "Data")
+	summary, _ := MakeFile(path, "Summary")
+	index, _ := MakeFile(path, "Index")
+	filter, _ := MakeFile(path, "Filter")
+	merkle, _ := MakeFile(path, "Metadata")
 	if data != nil && index != nil && summary != nil {
 		sstable.Data = data
 		sstable.Index = index
@@ -223,9 +223,12 @@ func (sstable *SSTable) makeSeparateFiles(path string, records []*model.Record, 
 
 		var contentSummary [][]byte = [][]byte{minKeyInfoSerialized, maxKeyInfoSerialized}
 
-		var contentData [][]byte = sstable.serializeData(records)
+		contentData, err := sstable.serializeData(records, compressionMap)
+		if err != nil {
+			return err
+		}
 		var contentIndex [][]byte = sstable.serializeIndexSummary(contentData, n, sstable.CompressionOn)
-		contentSummary = append(contentSummary, sstable.serializeIndexSummary(contentIndex, m, false)...)
+		contentSummary = append(contentSummary, sstable.serializeIndexSummary(contentIndex, m, sstable.CompressionOn)...)
 
 		var contentBf [][]byte = [][]byte{sstable.Bf.Serialize()}
 
@@ -244,8 +247,12 @@ func (sstable *SSTable) makeSeparateFiles(path string, records []*model.Record, 
 // function that calls every serialization
 // saves header one after the other -> length of min key, so we know how we need to read to get min key
 // same things is done for max key, then we saved offsets for data, index and summary
-func (sstable *SSTable) writeToSingleFile(records []*model.Record, n int, m int) {
+func (sstable *SSTable) writeToSingleFile(records []*model.Record, n int, m int, compressionMap map[string]uint64) error {
 	var content [][]byte
+
+	if sstable.CompressionOn { // then w
+
+	}
 
 	minKeyBytes := []byte(sstable.MinKey)
 	maxKeyBytes := []byte(sstable.MaxKey)
@@ -255,11 +262,14 @@ func (sstable *SSTable) writeToSingleFile(records []*model.Record, n int, m int)
 	var bfOffset uint64 = 7*8 + minKeyLength + maxKeyLength
 	var contentBf [][]byte = [][]byte{sstable.Bf.Serialize()}
 	var dataOffset uint64 = calculateOffset(contentBf, bfOffset)
-	var contentData [][]byte = sstable.serializeData(records)
+	contentData, err := sstable.serializeData(records, compressionMap)
+	if err != nil {
+		return err
+	}
 	var indexOffset uint64 = calculateOffset(contentData, dataOffset)
 	var contentIndex [][]byte = sstable.serializeIndexSummary(contentData, n, sstable.CompressionOn)
 	var summaryOffset uint64 = calculateOffset(contentIndex, indexOffset)
-	var contentSummary [][]byte = sstable.serializeIndexSummary(contentIndex, m, false)
+	var contentSummary [][]byte = sstable.serializeIndexSummary(contentIndex, m, sstable.CompressionOn)
 	var merkleOffset uint64 = calculateOffset(contentSummary, summaryOffset)
 	var contentMerkle [][]byte = [][]byte{sstable.Merkle.Serialize()}
 
@@ -284,24 +294,26 @@ func (sstable *SSTable) writeToSingleFile(records []*model.Record, n int, m int)
 	sstable.BfOffset = int64(bfOffset)
 	sstable.MerkleOffset = int64(merkleOffset)
 	sstable.IndexOffset = int64(indexOffset)
+
+	return nil
 }
 
 // params: n - index degree, m - summary degree
 // makes sstable which is in single file, all *os.File in struct refer to same file
 // this function also returns error if it occured during actions connected to files
-func (sstable *SSTable) makeSingleFile(path string, records []*model.Record, n int, m int) error {
-	file, err := makeFile(path, "DataIndexSummary")
+func (sstable *SSTable) makeSingleFile(path string, records []*model.Record, n int, m int, compressionMap map[string]uint64) error {
+	file, err := MakeFile(path, "DataIndexSummary")
 	if err != nil {
 		return err
 	}
 	sstable.Index, sstable.Data, sstable.Summary = file, file, file
-	sstable.writeToSingleFile(records, n, m)
+	sstable.writeToSingleFile(records, n, m, compressionMap)
 	return nil
 }
 
-// helper - makes files necessary for one sstable
+// helper - makes files
 // used in function makeSeparateFiles and makeSingleFile
-func makeFile(path string, s string) (*os.File, error) {
+func MakeFile(path string, s string) (*os.File, error) {
 	file, err := os.OpenFile(fmt.Sprintf("%s/%s%s.db", path, FILE_NAME, s), os.O_RDWR|os.O_CREATE, 0644)
 	if err != nil {
 		return nil, err

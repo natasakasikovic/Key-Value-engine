@@ -17,7 +17,7 @@ func calculateOffset(content [][]byte, offset uint64) uint64 {
 }
 
 // gets key - made to read key from records, but also from index block
-func getKey(item []byte, compressionOn bool) (uint64, string) {
+func getKey(item []byte, compressionOn bool) (uint64, []byte) {
 	if compressionOn {
 		return getKeyCompressed(item)
 	}
@@ -26,14 +26,15 @@ func getKey(item []byte, compressionOn bool) (uint64, string) {
 	binary.Read(buffer, binary.BigEndian, &keySize)
 	keyBytes := make([]byte, keySize)
 	buffer.Read(keyBytes)
-	return keySize, string(keyBytes)
+	return keySize, keyBytes
 }
 
 // if the key is compressed, we need to read it differently
-func getKeyCompressed(item []byte) (uint64, string) {
-	keySize, n := binary.Uvarint(item)
-	key := string(item[n : n+int(keySize)])
-	return keySize, key
+func getKeyCompressed(item []byte) (uint64, []byte) {
+
+	key := binary.BigEndian.Uint64(item[:8])
+	return 8, uint64ToBytes(key)
+
 }
 
 func uint64ToBytes(value uint64) []byte {
@@ -73,6 +74,7 @@ func getEndingOffset(singleFile bool, file *os.File, offset1, offset2, endingOff
 
 // returns key, offset in index/data and bytes read
 func readBlock(file *os.File) (string, uint64, int, error) {
+
 	var keySize uint64
 	var offset uint64
 	var key string
@@ -108,11 +110,23 @@ func readBlock(file *os.File) (string, uint64, int, error) {
 	return key, offset, totalSize, nil
 }
 
-// checks if folder is empty
-func emptyDir(path string) (bool, error) {
-	dirContent, err := utils.GetDirContent(path)
+func readBlockCompressed(file *os.File) (uint64, uint64, int, error) {
+	var key, offset uint64
+	var err error
+	keyBuffer := make([]byte, 8)
+	_, err = file.Read(keyBuffer)
 	if err != nil {
-		return false, err
+		return 0, 0, 0, err
 	}
-	return len(dirContent) != 0, nil
+	key = binary.BigEndian.Uint64(keyBuffer)
+	offsetBuffer := make([]byte, 8)
+	_, err = file.Read(offsetBuffer)
+	if err != nil {
+		return 0, 0, 0, err
+	}
+	offset = binary.BigEndian.Uint64(offsetBuffer)
+
+	return key, offset, 16, nil
+
 }
+

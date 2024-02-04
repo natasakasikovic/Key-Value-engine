@@ -48,9 +48,9 @@ func (r *Record) String() string {
 
 }
 
-func (r *Record) Serialize(compressionOn bool) []byte {
+func (r *Record) Serialize(compressionOn bool, compressionMap map[string]uint64) ([]byte, error) {
 	if compressionOn {
-		return SerializeWithCompression(r)
+		return SerializeWithCompression(r, compressionMap)
 	}
 	var buffer bytes.Buffer
 	binary.Write(&buffer, binary.BigEndian, r.KeySize)
@@ -65,7 +65,7 @@ func (r *Record) Serialize(compressionOn bool) []byte {
 		buffer.Write([]byte(r.Value))
 	}
 
-	return buffer.Bytes()
+	return buffer.Bytes(), nil
 }
 
 func CRC32(data []byte) uint32 {
@@ -74,9 +74,9 @@ func CRC32(data []byte) uint32 {
 
 // deserializes a record by reading field by field from the file
 // returns Record, number of bytes read, any error
-func Deserialize(file *os.File, compressionOn bool) (*Record, uint64, error) {
+func Deserialize(file *os.File, compressionOn bool, compressionMap map[string]uint64) (*Record, uint64, error) {
 	if compressionOn {
-		return deserializeWithCompression(file)
+		return deserializeWithCompression(file, compressionMap)
 	}
 	var err error
 	var record Record = Record{}
@@ -150,41 +150,39 @@ func Deserialize(file *os.File, compressionOn bool) (*Record, uint64, error) {
 }
 
 // serializes a Record with variable-length fields, returning the resulting byte slice.
-func SerializeWithCompression(r *Record) []byte {
+func SerializeWithCompression(r *Record, compressionMap map[string]uint64) ([]byte, error) {
 	var buf bytes.Buffer
 
-	utils.PutUvarint(&buf, r.KeySize)
-	buf.WriteString(r.Key)
+	err := binary.Write(&buf, binary.BigEndian, compressionMap[r.Key])
+	if err != nil {
+		return nil, err
+	}
+
 	utils.PutUvarint(&buf, uint64(r.Crc))
 	utils.PutUvarint(&buf, r.Timestamp)
 	buf.WriteByte(r.Tombstone)
 	if r.Tombstone != 1 {
-		utils.PutUvarint(&buf, r.ValueSize)
+		utils.PutUvarint(&buf, uint64(len(r.Value)))
 		buf.Write(r.Value)
 	}
 
-	return buf.Bytes()
+	return buf.Bytes(), nil
 }
 
 // deserializes a compressed Record from the given file, returning the record, total bytes read, and any error.
-func deserializeWithCompression(file *os.File) (*Record, uint64, error) {
+func deserializeWithCompression(file *os.File, compressionMap map[string]uint64) (*Record, uint64, error) {
 	record := &Record{}
 	var totalBytesRead uint64 = 0
 
-	keySize, bytesRead, err := utils.ReadUvarint(file)
-	if err != nil {
-		return nil, totalBytesRead, err
-	}
-	record.KeySize = keySize
-	totalBytesRead += bytesRead
-
-	keyBuf := make([]byte, keySize)
-	n, err := io.ReadAtLeast(file, keyBuf, int(keySize))
+	keyBuf := make([]byte, 8)
+	n, err := io.ReadAtLeast(file, keyBuf, 8)
 	if err != nil {
 		return nil, totalBytesRead + uint64(n), err
 	}
 	totalBytesRead += uint64(n)
-	record.Key = string(keyBuf)
+	key := binary.BigEndian.Uint64(keyBuf)
+	keyString := utils.GetKeyByValue(key, compressionMap)
+	record.Key = keyString
 
 	crc, bytesRead, err := utils.ReadUvarint(file)
 	if err != nil {
@@ -201,7 +199,7 @@ func deserializeWithCompression(file *os.File) (*Record, uint64, error) {
 	totalBytesRead += bytesRead
 
 	tombstoneByte := make([]byte, 1)
-	n, err = io.ReadFull(file, tombstoneByte)
+	n, err = io.ReadAtLeast(file, tombstoneByte, 1)
 	if err != nil {
 		return nil, totalBytesRead + uint64(n), err
 	}
@@ -225,10 +223,10 @@ func deserializeWithCompression(file *os.File) (*Record, uint64, error) {
 		record.Value = valueBuf
 	}
 
-	crcChech := append([]byte(record.Key), record.Value...)
-	if CRC32(crcChech) != record.Crc {
-		return nil, totalBytesRead, errors.New("not valid record")
-	}
+	// crcChech := append([]byte(record.Key), record.Value...)
+	// if CRC32(crcChech) != record.Crc {
+	// 	return nil, totalBytesRead, errors.New("not valid record")
+	// }
 
 	return record, totalBytesRead, nil
 }

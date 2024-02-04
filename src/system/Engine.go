@@ -2,9 +2,7 @@ package system
 
 import (
 	"errors"
-	"fmt"
 	"log"
-	"os"
 	"strings"
 	"time"
 
@@ -16,6 +14,7 @@ import (
 	"github.com/natasakasikovic/Key-Value-engine/src/structs/WAL"
 	"github.com/natasakasikovic/Key-Value-engine/src/structs/memtable"
 	"github.com/natasakasikovic/Key-Value-engine/src/structs/sstable"
+	"github.com/natasakasikovic/Key-Value-engine/src/utils"
 )
 
 const (
@@ -27,20 +26,52 @@ const (
 )
 
 type Engine struct {
-	Wal         *WAL.WAL
-	Cache       *LRUCache.LRUCache
-	TokenBucket *TokenBucket.TokenBucket
-	Config      *config2.Config
-	LSMTree     *lsmtree.LSMTree
+	Wal            *WAL.WAL
+	Cache          *LRUCache.LRUCache
+	TokenBucket    *TokenBucket.TokenBucket
+	Config         *config2.Config
+	LSMTree        *lsmtree.LSMTree
+	CompressionMap map[string]uint64
 }
 
 func NewEngine() (*Engine, error) {
-	filePath := fmt.Sprintf("src%cconfig%cconfig.json", os.PathSeparator, os.PathSeparator)
+	filePath := "../src/config/config.json"
 	config, err := config2.LoadConfig(filePath)
 	if err != nil {
 		return nil, err
 	}
-	wal, err := WAL.NewWAL(config.WalSize, int32(config.MemtableSize))
+
+	// -------------------------------------------------------------------
+	var dict map[string]uint64
+	if config.CompressionOn {
+		empty, err := utils.EmptyDir(sstable.COMPRESSION_PATH)
+		if err != nil {
+			return nil, err
+		}
+		if empty { // if the directory is empty, create a new hashmap and file
+
+			file, err := sstable.MakeFile(sstable.COMPRESSION_PATH, "CompressionInfo") // TODO: possibly move this to a separate function, not on sstable
+
+			if err != nil {
+				return nil, err
+			}
+
+			defer file.Close()
+
+			dict = make(map[string]uint64)
+		} else { // load hashmap from file
+			path := sstable.COMPRESSION_PATH + "/usertable-data-CompressionInfo.db"
+			dict, err = sstable.LoadHashMap(path)
+
+			if err != nil {
+				return nil, err
+			}
+
+		}
+	}
+	//-------------------------------------------------------------------
+
+	wal, err := WAL.NewWAL(config.WalSize, int32(config.MemTableMaxInstances))
 	if err != nil {
 		return nil, err
 	}
@@ -54,7 +85,7 @@ func NewEngine() (*Engine, error) {
 	}
 	tokenBucket := TokenBucket.NewTokenBucket(config.NumberOfTokens, int64(config.TokenResetInterval))
 	lsmTree := lsmtree.NewLSMTree(config.LSMTreeMaxDepth, config.LSMCompactionType, config.LSMFirstLevelSize, config.LSMGrowthFactor, config.IndexDegree, config.SummaryDegree, config.SSTableInSameFile, config.CompressionOn)
-	return &Engine{Wal: wal, Cache: cache, TokenBucket: tokenBucket, Config: config, LSMTree: lsmTree}, nil
+	return &Engine{Wal: wal, Cache: cache, TokenBucket: tokenBucket, Config: config, LSMTree: lsmTree, CompressionMap: dict}, nil
 }
 
 // Get Checks Memtable, Cache, BloomFilter and SSTable for given key
@@ -74,7 +105,7 @@ func (engine *Engine) Get(key string) ([]byte, error) {
 		return value, nil
 	}
 
-	record, err := sstable.Search(key)
+	record, err := sstable.Search(key, engine.CompressionMap)
 	if err == nil {
 		value = record.Value
 		engine.Cache.Add(key, value)
@@ -128,7 +159,7 @@ func (engine *Engine) Commit(key string, value []byte, tombstone byte) error {
 		}
 	}
 	if didFlush {
-		sstable, err := sstable.CreateSStable(records, engine.Config.SSTableInSameFile, engine.Config.CompressionOn, int(engine.Config.IndexDegree), int(engine.Config.SummaryDegree))
+		sstable, err := sstable.CreateSStable(records, engine.Config.SSTableInSameFile, engine.Config.CompressionOn, int(engine.Config.IndexDegree), int(engine.Config.SummaryDegree), engine.CompressionMap)
 		if err != nil {
 			return err
 		}

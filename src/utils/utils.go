@@ -74,3 +74,21 @@ func PutUvarint(buf *bytes.Buffer, value uint64) {
 	n := binary.PutUvarint(uvarintBuf[:], value)
 	buf.Write(uvarintBuf[:n])
 }
+
+// checks if folder is empty
+func EmptyDir(path string) (bool, error) {
+	dirContent, err := GetDirContent(path)
+	if err != nil {
+		return false, err
+	}
+	return len(dirContent) == 0, nil
+}
+
+func GetKeyByValue(compressedKey uint64, compressionMap map[string]uint64) string {
+	for key, value := range compressionMap {
+		if value == compressedKey {
+			return key
+		}
+	}
+	return ""
+}

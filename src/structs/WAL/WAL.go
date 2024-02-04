@@ -3,14 +3,15 @@ package WAL
 import (
 	"encoding/binary"
 	"fmt"
-	"github.com/natasakasikovic/Key-Value-engine/src/model"
-	"github.com/natasakasikovic/Key-Value-engine/src/structs/memtable"
-	"github.com/natasakasikovic/Key-Value-engine/src/utils"
 	"io"
 	"log"
 	"os"
 	"strconv"
 	"strings"
+
+	"github.com/natasakasikovic/Key-Value-engine/src/model"
+	"github.com/natasakasikovic/Key-Value-engine/src/structs/memtable"
+	"github.com/natasakasikovic/Key-Value-engine/src/utils"
 )
 
 const (
@@ -46,7 +47,7 @@ type WAL struct {
 }
 
 func getBytesFromLastSegmentFromFile(numOfMemtables int32) (int64, int32, []int64, []int32, int32, error) {
-	path := fmt.Sprintf("src%cstructs%cWAL%cbytesFromLastSegment.log", os.PathSeparator, os.PathSeparator, os.PathSeparator)
+	path := "structs/WAL/bytesFromLastSegment.log"
 
 	file, err := os.Open(path)
 	if os.IsNotExist(err) {
@@ -64,7 +65,7 @@ func getBytesFromLastSegmentFromFile(numOfMemtables int32) (int64, int32, []int6
 		return -1, -1, nil, nil, -1, err
 	}
 	if fileLength == 0 {
-		return 0, 1, make([]int64, 5), make([]int32, 5), 0, err
+		return 0, 1, make([]int64, numOfMemtables), make([]int32, numOfMemtables), 0, err
 	}
 	size := numOfMemtables*(4+8) + 4
 	buf := make([]byte, size)
@@ -87,7 +88,7 @@ func getBytesFromLastSegmentFromFile(numOfMemtables int32) (int64, int32, []int6
 	return bytesFromLastSegment, lowWaterMark, memtableBytesFromLastSegment, memtableLowWatermark, currentMemtable, nil
 }
 func (wal *WAL) SetBytesFromLastSegmentFromFile() error {
-	path := fmt.Sprintf("src%cstructs%cWAL%cbytesFromLastSegment.log", os.PathSeparator, os.PathSeparator, os.PathSeparator)
+	path := "structs/WAL/bytesFromLastSegment.log"
 	file, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE, 0644)
 	if err != nil {
 		return err
@@ -113,9 +114,9 @@ func (wal *WAL) SetBytesFromLastSegmentFromFile() error {
 }
 func NewWAL(maxBytesPerFile uint32, numOfMemtables int32) (*WAL, error) {
 
-	files, err := os.ReadDir("data/log")
+	files, err := os.ReadDir("../data/log")
 	if os.IsNotExist(err) {
-		err := os.Mkdir("data/log", os.ModeDir)
+		err := os.Mkdir("../data/log", os.ModeDir)
 		if err != nil {
 			return nil, err
 		}
@@ -129,10 +130,10 @@ func NewWAL(maxBytesPerFile uint32, numOfMemtables int32) (*WAL, error) {
 	var path string
 	//If there are no files
 	if len(list) == 0 {
-		path = fmt.Sprintf("data%clog%c%s%s.log", os.PathSeparator, os.PathSeparator, FILE_NAME, "0001")
+		path = fmt.Sprintf("../data/log/%s%s.log", FILE_NAME, "0001")
 		list = append(list, fmt.Sprintf("%s%s.log", FILE_NAME, "0001"))
 	} else {
-		path = fmt.Sprintf("data%clog%c%s", os.PathSeparator, os.PathSeparator, list[len(list)-1])
+		path = fmt.Sprintf("../data/log/%s", list[len(list)-1])
 	}
 	currentFile, err := os.OpenFile(path, os.O_RDWR|os.O_CREATE, 0644)
 	if err != nil {
@@ -201,7 +202,7 @@ func (wal *WAL) Append(r *model.Record) error {
 		if err != nil {
 			return err
 		}
-		path := fmt.Sprintf("data%clog%c%s%04d.log", os.PathSeparator, os.PathSeparator, FILE_NAME, br+1) // making next file
+		path := fmt.Sprintf("../data/log/%s%04d.log", FILE_NAME, br+1) // making next file
 		fileName := fmt.Sprintf("%s%04d.log", FILE_NAME, br+1)
 		wal.segmentNames = append(wal.segmentNames, fileName)
 		wal.currentFile, err = os.OpenFile(path, os.O_RDWR|os.O_CREATE, 0644)
@@ -219,7 +220,7 @@ func (wal *WAL) Append(r *model.Record) error {
 func (wal *WAL) ReadRecords() error {
 	bytesToTransfer := make([]byte, 0)
 	for i, fileName := range wal.segmentNames {
-		path := fmt.Sprintf("data%clog%c%s", os.PathSeparator, os.PathSeparator, fileName)
+		path := fmt.Sprintf("../data/log/%s", fileName)
 		file, err := os.OpenFile(path, os.O_RDONLY, 644)
 		defer file.Close()
 		if err != nil {

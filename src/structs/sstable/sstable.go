@@ -15,7 +15,7 @@ const (
 	FILE_NAME        = "usertable-data-"
 	PATH             = "../data/sstable"
 	START_COUNTER    = "0001"
-	COMPRESSION_PATH = "../data/CompressionInfo"
+	COMPRESSION_PATH = "../data/compressionInfo"
 )
 
 type SSTable struct {
@@ -29,7 +29,7 @@ type SSTable struct {
 
 // function that creates a new sstable
 // returns pointer to sstable if it is successfully created, otherwise returns an error
-func CreateSStable(records []*model.Record, singleFile, compressionOn bool, indexDegree, summaryDegree int) (*SSTable, error) {
+func CreateSStable(records []*model.Record, singleFile, compressionOn bool, indexDegree, summaryDegree int, compressionMap map[string]uint64) (*SSTable, error) {
 
 	sstable := SSTable{}
 	dirNames, err := utils.GetDirContent(PATH)
@@ -57,6 +57,7 @@ func CreateSStable(records []*model.Record, singleFile, compressionOn bool, inde
 
 	if compressionOn {
 		sstable.CompressionOn = true
+		dictionaryEncodingOn(records, compressionMap)
 	}
 
 	sstable.Bf = bloomFilter.NewBf(len(records), 0.001)
@@ -65,12 +66,17 @@ func CreateSStable(records []*model.Record, singleFile, compressionOn bool, inde
 	}
 	sstable.MinKey = records[0].Key
 	sstable.MaxKey = records[len(records)-1].Key
-	sstable.Merkle, _ = merkletree.NewTree(sstable.serializeData(records))
+
+	content, err := sstable.serializeData(records, compressionMap)
+	if err != nil {
+		return nil, err
+	}
+	sstable.Merkle, _ = merkletree.NewTree(content)
 
 	if singleFile {
-		err = sstable.makeSingleFile(path, records, indexDegree, summaryDegree)
+		err = sstable.makeSingleFile(path, records, indexDegree, summaryDegree, compressionMap)
 	} else {
-		err = sstable.makeSeparateFiles(path, records, indexDegree, summaryDegree)
+		err = sstable.makeSeparateFiles(path, records, indexDegree, summaryDegree, compressionMap)
 	}
 
 	if err != nil {
@@ -81,8 +87,8 @@ func CreateSStable(records []*model.Record, singleFile, compressionOn bool, inde
 
 // returns nil as first param if record is not found
 // second param returns error if it occured during actions connected to files, otherwise returns nil
-func Search(key string) (*model.Record, error) {
-
+func Search(key string, compressionMap map[string]uint64) (*model.Record, error) {
+	fmt.Println("searching for key in sstable: ", key)
 	dirContent, err := utils.GetDirContent(PATH) // dirContent - names of all sstables dirs
 	if err != nil {
 		return nil, err
@@ -107,8 +113,12 @@ func Search(key string) (*model.Record, error) {
 			return nil, err
 		}
 
-		// check if compression is on (if there is a file CompressionInfo.db in folder, then compression is on)
-		sstable.CompressionOn, err = emptyDir(COMPRESSION_PATH)
+		// check if compression is on (if there is a file CompressionInfo.db in folder, then compression is on
+		retVal, err := utils.EmptyDir(COMPRESSION_PATH)
+		if err != nil {
+			return nil, err
+		}
+		sstable.CompressionOn = !retVal
 
 		sstable.Name = dirName
 
@@ -123,7 +133,7 @@ func Search(key string) (*model.Record, error) {
 		var endingOffset int = sstable.getEndingOffsetSummary(len(content) == 1)
 
 		// offset1 and offset2 are offsets between which we should search index
-		offset1, offset2, err := sstable.searchIndex(sstable.Summary, int(sstable.SummaryOffset), endingOffset, key)
+		offset1, offset2, err := sstable.searchIndex(sstable.Summary, int(sstable.SummaryOffset), endingOffset, key, compressionMap)
 
 		if err != nil {
 			return nil, err
@@ -133,9 +143,17 @@ func Search(key string) (*model.Record, error) {
 			offset2 = uint64(sstable.SummaryOffset) - uint64(sstable.IndexOffset) // this is the size of index
 		} else { // in other case we need to read next value
 			sstable.Index.Seek(int64(offset2+uint64(sstable.IndexOffset)), 0)
-			_, _, bytesRead, err := readBlock(sstable.Index)
-			if err != nil {
-				return nil, err
+			var bytesRead int
+			if sstable.CompressionOn {
+				_, _, bytesRead, err = readBlockCompressed(sstable.Index)
+				if err != nil {
+					return nil, err
+				}
+			} else {
+				_, _, bytesRead, err = readBlock(sstable.Index)
+				if err != nil {
+					return nil, err
+				}
 			}
 			offset2 += uint64(bytesRead) // we need to increase offset2, so we can read one more value while searching in index
 		}
@@ -144,7 +162,7 @@ func Search(key string) (*model.Record, error) {
 		offset2 = getEndingOffset(len(content) == 1, sstable.Index, sstable.IndexOffset, sstable.SummaryOffset, int64(offset2))
 
 		// offset1 and offset2 are offsets between which we should search data
-		offset1, offset2, err = sstable.searchIndex(sstable.Index, int(offset1), int(offset2), key)
+		offset1, offset2, err = sstable.searchIndex(sstable.Index, int(offset1), int(offset2), key, compressionMap)
 
 		if err != nil {
 			return nil, err
@@ -153,7 +171,7 @@ func Search(key string) (*model.Record, error) {
 		offset1 += uint64(sstable.DataOffset) // if it is single file starting index offste is okay
 		offset2 = getEndingOffset(len(content) == 1, sstable.Data, sstable.DataOffset, sstable.IndexOffset, int64(offset2))
 
-		record, err := sstable.searchData(len(content) == 1, int(offset1), int(offset2), key)
+		record, err := sstable.searchData(len(content) == 1, int(offset1), int(offset2), key, compressionMap)
 
 		if err != nil {
 			return nil, err
