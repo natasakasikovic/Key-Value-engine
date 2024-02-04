@@ -64,7 +64,7 @@ func getBytesFromLastSegmentFromFile(numOfMemtables int32) (int64, int32, []int6
 		return -1, -1, nil, nil, -1, err
 	}
 	if fileLength == 0 {
-		return 0, 1, make([]int64, 5), make([]int32, 5), 0, err
+		return 0, 1, make([]int64, numOfMemtables), make([]int32, numOfMemtables), 0, err
 	}
 	size := numOfMemtables*(4+8) + 4
 	buf := make([]byte, size)
@@ -275,7 +275,7 @@ func (wal *WAL) ReadRecords() error {
 					//IF THERE IS ENOUGH TO FLUSH IT WOULD'VE BEEN FLUSHED EARLIER
 					didSwap, _, _ := memtable.Put(record.Key, record.Value, record.Timestamp, record.Tombstone)
 					if didSwap {
-						err := wal.UpdateWatermark(false)
+						//err := wal.UpdateWatermark(false)
 						if err != nil {
 							return err
 						}

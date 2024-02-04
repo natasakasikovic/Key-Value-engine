@@ -698,7 +698,7 @@ func probStructs(engine *engine.Engine) {
 
 	}
 }
-func startEngine() {
+func StartEngine() {
 	engine, err := engine.NewEngine()
 	if err != nil {
 		fmt.Printf("err: %v\n", err)

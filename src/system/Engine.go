@@ -31,7 +31,7 @@ func NewEngine() (*Engine, error) {
 	if err != nil {
 		return nil, err
 	}
-	wal, err := WAL.NewWAL(config.WalSize, int32(config.MemtableSize))
+	wal, err := WAL.NewWAL(config.WalSize, int32(config.MemTableMaxInstances))
 	if err != nil {
 		return nil, err
 	}
