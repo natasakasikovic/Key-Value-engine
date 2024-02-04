@@ -2,6 +2,7 @@ package consoleinterface
 
 import (
 	"bufio"
+	"encoding/binary"
 	"fmt"
 	"os"
 	"strconv"
@@ -9,9 +10,11 @@ import (
 
 	"github.com/natasakasikovic/Key-Value-engine/src/model"
 	countMinSketch "github.com/natasakasikovic/Key-Value-engine/src/structs/CountMinSketch"
+	hyperLogLog "github.com/natasakasikovic/Key-Value-engine/src/structs/HyperLogLog"
 	bloomFilter "github.com/natasakasikovic/Key-Value-engine/src/structs/bloomFilter"
 	iterators "github.com/natasakasikovic/Key-Value-engine/src/structs/iterators"
 	scan "github.com/natasakasikovic/Key-Value-engine/src/structs/scan"
+	simHash "github.com/natasakasikovic/Key-Value-engine/src/structs/simHash"
 	engine "github.com/natasakasikovic/Key-Value-engine/src/system"
 )
 
@@ -386,7 +389,7 @@ func useBF(engine *engine.Engine) {
 			fmt.Print("Enter the key: ")
 			scanner.Scan()
 			input := scanner.Text()
-			key := BF_KEY + input
+			key := BF_KEY + "_" + input
 
 			fmt.Print("Enter the expected num of elems: ")
 			scanner.Scan()
@@ -433,12 +436,13 @@ func useBF(engine *engine.Engine) {
 			key := scanner.Text()
 			value, err := engine.Get(key)
 			if value == nil && err == nil {
-				fmt.Println("Bloom filter does not exist.")
+				fmt.Println("Bloom filter does not exists.")
 			} else if err != nil {
 				fmt.Printf("err: %v\n", err)
 			} else {
 				bf := bloomFilter.Deserialize(value)
 				fmt.Print("Enter the element: ")
+				scanner.Scan()
 				elem := scanner.Text()
 				bf.Insert(elem)
 				serializedBf := bf.Serialize()
@@ -452,6 +456,7 @@ func useBF(engine *engine.Engine) {
 		case 4:
 			scanner := bufio.NewScanner(os.Stdin)
 			fmt.Print("Enter the BloomFilter name: ")
+			scanner.Scan()
 			key := scanner.Text()
 			value, err := engine.Get(key)
 			if value == nil && err == nil {
@@ -461,6 +466,7 @@ func useBF(engine *engine.Engine) {
 			} else {
 				bf := bloomFilter.Deserialize(value)
 				fmt.Print("Enter the element: ")
+				scanner.Scan()
 				elem := scanner.Text()
 				exists := bf.Find(elem)
 				if !exists {
@@ -511,7 +517,7 @@ func useCMS(engine *engine.Engine) {
 			fmt.Print("Enter the key: ")
 			scanner.Scan()
 			input := scanner.Text()
-			key := CMS_KEY + input
+			key := CMS_KEY + "_" + input
 
 			fmt.Print("Enter the epsilon(float): ")
 			scanner.Scan()
@@ -544,6 +550,7 @@ func useCMS(engine *engine.Engine) {
 		case 2:
 			scanner := bufio.NewScanner(os.Stdin)
 			fmt.Print("Enter the CountMinSketch name: ")
+			scanner.Scan()
 			key := scanner.Text()
 			err := engine.Delete(key)
 			if err == nil {
@@ -552,9 +559,9 @@ func useCMS(engine *engine.Engine) {
 				fmt.Printf("err: %v\n", err)
 			}
 		case 3:
-			fmt.Println("insert")
 			scanner := bufio.NewScanner(os.Stdin)
 			fmt.Print("Enter the CountMinSketch name: ")
+			scanner.Scan()
 			key := scanner.Text()
 			value, err := engine.Get(key)
 			if value == nil && err == nil {
@@ -563,7 +570,7 @@ func useCMS(engine *engine.Engine) {
 				fmt.Printf("err: %v\n", err)
 			} else {
 				cms := countMinSketch.Deserialize(value)
-				fmt.Print("Enter the element: ")
+				fmt.Print("Enter the event: ")
 				scanner.Scan()
 				elem := scanner.Text()
 				cms.Insert(elem)
@@ -577,7 +584,24 @@ func useCMS(engine *engine.Engine) {
 			}
 
 		case 4:
-			fmt.Println("provera ucestalosti")
+			scanner := bufio.NewScanner(os.Stdin)
+			fmt.Print("Enter the CountMinSketch name: ")
+			scanner.Scan()
+			key := scanner.Text()
+			value, err := engine.Get(key)
+			if value == nil && err == nil {
+				fmt.Println("CountMinSketch does not exists.")
+			} else if err != nil {
+				fmt.Printf("err: %v\n", err)
+			} else {
+				cms := countMinSketch.Deserialize(value)
+				fmt.Print("Enter the events: ")
+				scanner.Scan()
+				elem := scanner.Text()
+				frequency := cms.Search(elem)
+				fmt.Println("There are ", frequency, " event(s)")
+			}
+
 		case 5:
 			fmt.Println("Exit.")
 			return
@@ -586,8 +610,15 @@ func useCMS(engine *engine.Engine) {
 		}
 	}
 }
-func useHLL() {
-	fmt.Println("hll")
+func useHLL(engine *engine.Engine) {
+	records, err := prefixScan(engine.Config.CompressionOn, HLL_KEY)
+	if err != nil || len(records) == 0 {
+		fmt.Println("There are no existing instances of HyperLogLog")
+	} else if records != nil && err == nil {
+		for _, record := range records {
+			fmt.Printf("record: %v\n", record)
+		}
+	}
 	scanner := bufio.NewScanner(os.Stdin)
 	for {
 		fmt.Println("\nHyperLogLog")
@@ -608,13 +639,81 @@ func useHLL() {
 		}
 		switch option {
 		case 1:
-			fmt.Println("kreiranje nove instance")
+			scanner := bufio.NewScanner(os.Stdin)
+			fmt.Print("Enter the key: ")
+			scanner.Scan()
+			input := scanner.Text()
+			key := HLL_KEY + "_" + input
+
+			fmt.Print("Enter p: ")
+			scanner.Scan()
+			param := scanner.Text()
+			p, err1 := strconv.ParseUint(param, 10, 8)
+			if err1 != nil {
+				fmt.Println("Wrong input. Please try again.")
+				return
+			}
+
+			hll := hyperLogLog.CreateHLL(uint8(p))
+			value := hll.Serialize()
+			err := engine.Put(key, value)
+			if err == nil {
+				fmt.Println("Request Successfully Completed")
+			} else {
+				fmt.Printf("err: %v\n", err)
+			}
+
 		case 2:
-			fmt.Println("brisanje postojece instance")
+			scanner := bufio.NewScanner(os.Stdin)
+			fmt.Print("Enter the HyperLogLog name: ")
+			scanner.Scan()
+			key := scanner.Text()
+			err := engine.Delete(key)
+			if err == nil {
+				fmt.Println("Request Successfully Completed")
+			} else {
+				fmt.Printf("err: %v\n", err)
+			}
 		case 3:
-			fmt.Println("insert")
+			scanner := bufio.NewScanner(os.Stdin)
+			fmt.Print("Enter the HyperLogLog name: ")
+			scanner.Scan()
+			key := scanner.Text()
+			value, err := engine.Get(key)
+			if value == nil && err == nil {
+				fmt.Println("HyperLogLog does not exists.")
+			} else if err != nil {
+				fmt.Printf("err: %v\n", err)
+			} else {
+				hll := hyperLogLog.Deserialize(value)
+				fmt.Print("Enter the element: ")
+				scanner.Scan()
+				elem := scanner.Text()
+				hll.Insert(elem)
+				serializedHLL := hll.Serialize()
+				err := engine.Put(key, serializedHLL)
+				if err == nil {
+					fmt.Println("Request Successfully Completed")
+				} else {
+					fmt.Printf("err: %v\n", err)
+				}
+			}
 		case 4:
-			fmt.Println("provera kardinaliteta")
+			scanner := bufio.NewScanner(os.Stdin)
+			fmt.Print("Enter the HyperLogLog name: ")
+			scanner.Scan()
+			key := scanner.Text()
+			value, err := engine.Get(key)
+			if value == nil && err == nil {
+				fmt.Println("HyperLogLog does not exists.")
+			} else if err != nil {
+				fmt.Printf("err: %v\n", err)
+			} else {
+				hll := hyperLogLog.Deserialize(value)
+				cardinality := hll.Estimate()
+				fmt.Println("There are ", cardinality, " different elements.")
+			}
+
 		case 5:
 			fmt.Println("Exit.")
 			return
@@ -623,15 +722,14 @@ func useHLL() {
 		}
 	}
 }
-func useSimHash() {
-	fmt.Println("simhash")
+func useSimHash(engine *engine.Engine) {
 	scanner := bufio.NewScanner(os.Stdin)
 	for {
 		fmt.Println("\nSimHash")
 		fmt.Println("\nChoose an option:")
 		fmt.Println("1 --> Save fingerprint")
 		fmt.Println("2 --> Calculate Hamming distance")
-		fmt.Println("5 --> Exit")
+		fmt.Println("3 --> Exit")
 
 		scanner.Scan()
 		input := scanner.Text()
@@ -643,14 +741,46 @@ func useSimHash() {
 		}
 		switch option {
 		case 1:
-			fmt.Println("kreiranje nove instance")
+			fmt.Print("Enter text: ")
+			scanner.Scan()
+			input := scanner.Text()
+
+			fingerprint := simHash.GetFingerprint(input)
+			byteSlice := make([]byte, 8)
+			binary.BigEndian.PutUint64(byteSlice, fingerprint)
+			err := engine.Put(SH_KEY+"_"+input, byteSlice)
+			if err == nil {
+				fmt.Println("Request Successfully Completed")
+			} else {
+				fmt.Printf("err: %v\n", err)
+			}
 		case 2:
-			fmt.Println("brisanje postojece instance")
+			fmt.Print("Enter text1: ")
+			scanner.Scan()
+			input1 := scanner.Text()
+
+			fmt.Print("Enter text2: ")
+			scanner.Scan()
+			input2 := scanner.Text()
+
+			var fingerprint1, fingerprint2 uint64
+			fp1, err1 := engine.Get(SH_KEY + "_" + input1)
+			if err1 == nil && fp1 != nil {
+				fingerprint1 = binary.BigEndian.Uint64(fp1)
+			} else if fp1 == nil {
+				fingerprint1 = simHash.GetFingerprint(input1)
+			}
+			fp2, err2 := engine.Get(SH_KEY + "_" + input2)
+			if err2 == nil && fp2 != nil {
+				fingerprint2 = binary.BigEndian.Uint64(fp2)
+			} else if fp1 == nil {
+				fingerprint2 = simHash.GetFingerprint(input2)
+			}
+
+			distance := simHash.HammingDistance(fingerprint1, fingerprint2)
+			fmt.Println("Hamming distance: ", distance)
+
 		case 3:
-			fmt.Println("insert")
-		case 4:
-			fmt.Println("provera kardinaliteta")
-		case 5:
 			fmt.Println("Exit.")
 			return
 		default:
@@ -686,9 +816,9 @@ func probStructs(engine *engine.Engine) {
 		case 2:
 			useCMS(engine)
 		case 3:
-			useHLL()
+			useHLL(engine)
 		case 4:
-			useSimHash()
+			useSimHash(engine)
 		case 5:
 			fmt.Println("Exit.")
 			return
