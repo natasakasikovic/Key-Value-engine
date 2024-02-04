@@ -1,20 +1,25 @@
 package iterators
 
-import "github.com/natasakasikovic/Key-Value-engine/src/model"
+import (
+	"errors"
+	"fmt"
+
+	"github.com/natasakasikovic/Key-Value-engine/src/model"
+)
 
 type Iterator interface {
 	Next() (*model.Record, error) //Should return a pointer to the next non-deleted record
 	Stop()                        //Should close files and free resources
 }
 
-//Iterator groups allow you to iterate using multiple iterators at the same time
+// Iterator groups allow you to iterate using multiple iterators at the same time
 type IteratorGroup struct {
 	iterators     []Iterator
 	iteratorCount int
 	records       []*model.Record
 }
 
-//Creates and initializes a new iterator group containing all the passed iterators
+// Creates and initializes a new iterator group containing all the passed iterators
 func NewIteratorGroup(iterators []Iterator) (*IteratorGroup, error) {
 	var group IteratorGroup = IteratorGroup{
 		iterators:     iterators,
@@ -27,15 +32,16 @@ func NewIteratorGroup(iterators []Iterator) (*IteratorGroup, error) {
 	for i := 0; i < group.iteratorCount; i++ {
 		group.records[i], err = group.iterators[i].Next()
 		if err != nil {
-			return nil, err
+			group.Stop()
+			return nil, errors.New(fmt.Sprintf("Error initializing iterator %d: %s", i, err.Error()))
 		}
 	}
 	return &group, nil
 }
 
-//Returns a pointer to the next record in the iterator group
-//The next record is the record containing the smallest key from all the iterators in the group
-//Will never return a deleted record
+// Returns a pointer to the next record in the iterator group
+// The next record is the record containing the smallest key from all the iterators in the group
+// Will never return a deleted record
 func (iterGroup *IteratorGroup) Next() (*model.Record, error) {
 	const EMPTY_KEY string = ""
 
@@ -124,7 +130,7 @@ func (iterGroup *IteratorGroup) Next() (*model.Record, error) {
 	}
 }
 
-//Frees allocated resources and closes files
+// Frees allocated resources and closes files
 func (iterGroup *IteratorGroup) Stop() {
 	for i := 0; i < iterGroup.iteratorCount; i++ {
 		iterGroup.iterators[i].Stop()

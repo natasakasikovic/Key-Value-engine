@@ -34,7 +34,7 @@ type Engine struct {
 }
 
 func NewEngine() (*Engine, error) {
-	filePath := "../src/config/config.json"
+	filePath := "config/config.json"
 	config, err := config2.LoadConfig(filePath)
 	if err != nil {
 		return nil, err

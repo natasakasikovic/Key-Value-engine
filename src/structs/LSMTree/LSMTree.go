@@ -2,6 +2,7 @@ package lsmtree
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 
@@ -304,11 +305,13 @@ func mergeSSTables(sstableArray []*sstable.SSTable, sstableIndexDegree uint32, s
 		}
 	}
 
+	//Try to create the iterator group
 	iterGroup, err := iterators.NewIteratorGroup(fileIterators)
-	defer iterGroup.Stop()
 	if err != nil {
-		return nil, err
+		return nil, errors.New(fmt.Sprintf("Error creating iterator group: %s", err.Error()))
 	}
+	//Stop the iterators when the function ends
+	defer iterGroup.Stop()
 
 	//Array containing records going into the new sstable
 	var newRecords []*model.Record = make([]*model.Record, 0)
