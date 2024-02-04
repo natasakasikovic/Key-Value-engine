@@ -26,7 +26,7 @@ const (
 	TB_KEY  = "tokenBucket"
 )
 
-func prefixScan(isSStableCompressed bool, prefix string) ([]*model.Record, error) {
+func prefixScan(isSStableCompressed bool, prefix string, compressionMap map[string]uint64) ([]*model.Record, error) {
 	scanner := bufio.NewScanner(os.Stdin)
 
 	fmt.Print("Enter the page number: ")
@@ -49,7 +49,7 @@ func prefixScan(isSStableCompressed bool, prefix string) ([]*model.Record, error
 		return nil, err
 	}
 
-	records, err := scan.PrefixScan(prefix, pgNumber, pageSize, isSStableCompressed)
+	records, err := scan.PrefixScan(prefix, pgNumber, pageSize, isSStableCompressed, compressionMap)
 	if err == nil {
 		return records, err
 	} else {
@@ -57,7 +57,7 @@ func prefixScan(isSStableCompressed bool, prefix string) ([]*model.Record, error
 	}
 
 }
-func rangeScan(isSStableCompressed bool) ([]*model.Record, error) {
+func rangeScan(isSStableCompressed bool, compressionMap map[string]uint64) ([]*model.Record, error) {
 	scanner := bufio.NewScanner(os.Stdin)
 
 	fmt.Print("From: ")
@@ -88,19 +88,19 @@ func rangeScan(isSStableCompressed bool) ([]*model.Record, error) {
 		return nil, err
 	}
 
-	records, err := scan.RangeScan(minKey, maxKey, pgNumber, pageSize, isSStableCompressed)
+	records, err := scan.RangeScan(minKey, maxKey, pgNumber, pageSize, isSStableCompressed, compressionMap)
 	if err == nil {
 		return records, err
 	} else {
 		return nil, err
 	}
 }
-func prefixIterate(isSStableCompressed bool) {
+func prefixIterate(isSStableCompressed bool, compressionMap map[string]uint64) {
 	scanner := bufio.NewScanner(os.Stdin)
 	fmt.Print("Enter the prefix: ")
 	scanner.Scan()
 	prefix := scanner.Text()
-	prefixIterator, err := iterators.NewPrefixIterator(prefix, isSStableCompressed)
+	prefixIterator, err := iterators.NewPrefixIterator(prefix, isSStableCompressed, compressionMap)
 	if prefixIterator == nil && err != nil {
 		fmt.Printf("err: %v\n", err)
 		return
@@ -139,7 +139,7 @@ func prefixIterate(isSStableCompressed bool) {
 	}
 
 }
-func rangeIterate(isSStableCompressed bool) {
+func rangeIterate(isSStableCompressed bool, compressionMap map[string]uint64) {
 	scanner := bufio.NewScanner(os.Stdin)
 	fmt.Print("Enter the minKey: ")
 	scanner.Scan()
@@ -149,7 +149,7 @@ func rangeIterate(isSStableCompressed bool) {
 	scanner.Scan()
 	maxKey := scanner.Text()
 
-	rangeIterator, err := iterators.NewRangeIterator(minKey, maxKey, isSStableCompressed)
+	rangeIterator, err := iterators.NewRangeIterator(minKey, maxKey, isSStableCompressed, compressionMap)
 	if rangeIterator == nil && err != nil {
 		fmt.Printf("err: %v\n", err)
 		return
@@ -213,7 +213,7 @@ func getRequest(engine *engine.Engine) {
 		case 2:
 			scanning(engine)
 		case 3:
-			iterator(engine.Config.CompressionOn)
+			iterator(engine.Config.CompressionOn, engine.CompressionMap)
 		case 4:
 			fmt.Println("Exit.")
 			return
@@ -247,7 +247,7 @@ func scanning(engine *engine.Engine) {
 			fmt.Print("Enter the prefix: ")
 			scanner.Scan()
 			prefix := scanner.Text()
-			records, err := prefixScan(engine.Config.CompressionOn, prefix)
+			records, err := prefixScan(engine.Config.CompressionOn, prefix, engine.CompressionMap)
 			if records == nil && err != nil {
 				fmt.Printf("err: %v\n", err)
 			} else if records != nil && err == nil {
@@ -256,7 +256,7 @@ func scanning(engine *engine.Engine) {
 				}
 			}
 		case 2:
-			records, err := rangeScan(engine.Config.CompressionOn)
+			records, err := rangeScan(engine.Config.CompressionOn, engine.CompressionMap)
 			if records == nil && err != nil {
 				fmt.Printf("err: %v\n", err)
 			} else if records != nil && err == nil {
@@ -274,7 +274,7 @@ func scanning(engine *engine.Engine) {
 	}
 }
 
-func iterator(isSStableCompressed bool) {
+func iterator(isSStableCompressed bool, compressionMap map[string]uint64) {
 	scanner := bufio.NewScanner(os.Stdin)
 
 	for {
@@ -294,9 +294,9 @@ func iterator(isSStableCompressed bool) {
 
 		switch option {
 		case 1:
-			prefixIterate(isSStableCompressed)
+			prefixIterate(isSStableCompressed, compressionMap)
 		case 2:
-			rangeIterate(isSStableCompressed)
+			rangeIterate(isSStableCompressed, compressionMap)
 		case 3:
 			fmt.Println("Exit.")
 			return
@@ -356,7 +356,7 @@ func putRequest(engine *engine.Engine) {
 	}
 }
 func useBF(engine *engine.Engine) {
-	records, err := prefixScan(engine.Config.CompressionOn, BF_KEY)
+	records, err := prefixScan(engine.Config.CompressionOn, BF_KEY, engine.CompressionMap)
 	if err != nil || len(records) == 0 {
 		fmt.Println("There are no existing BloomFilters.")
 	} else if records != nil && err == nil {
@@ -485,7 +485,7 @@ func useBF(engine *engine.Engine) {
 	}
 }
 func useCMS(engine *engine.Engine) {
-	records, err := prefixScan(engine.Config.CompressionOn, CMS_KEY)
+	records, err := prefixScan(engine.Config.CompressionOn, CMS_KEY, engine.CompressionMap)
 	if err != nil || len(records) == 0 {
 		fmt.Println("There are no existing instances of CountMinSketch.")
 	} else if records != nil && err == nil {
@@ -611,7 +611,7 @@ func useCMS(engine *engine.Engine) {
 	}
 }
 func useHLL(engine *engine.Engine) {
-	records, err := prefixScan(engine.Config.CompressionOn, HLL_KEY)
+	records, err := prefixScan(engine.Config.CompressionOn, HLL_KEY, engine.CompressionMap)
 	if err != nil || len(records) == 0 {
 		fmt.Println("There are no existing instances of HyperLogLog")
 	} else if records != nil && err == nil {
