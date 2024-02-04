@@ -12,7 +12,7 @@ type RangeIterator struct {
 	rangeMax  string
 }
 
-func NewRangeIterator(minKey string, maxKey string, isSStableCompressed bool) (*RangeIterator, error) {
+func NewRangeIterator(minKey string, maxKey string, isSStableCompressed bool, compressionMap map[string]uint64) (*RangeIterator, error) {
 	var rangeIter *RangeIterator = &RangeIterator{rangeMin: minKey, rangeMax: maxKey}
 	var iterators []Iterator
 
@@ -25,7 +25,7 @@ func NewRangeIterator(minKey string, maxKey string, isSStableCompressed bool) (*
 	//If it contains records in the given range, create an iterator to it
 	for i := 0; i < len(allSStables); i++ {
 		if allSStables[i].MinKey <= maxKey && allSStables[i].MaxKey >= minKey {
-			sstableIter, err := NewSSTableIterator(allSStables[i], isSStableCompressed)
+			sstableIter, err := NewSSTableIterator(allSStables[i], isSStableCompressed, compressionMap)
 			if err != nil {
 				return nil, err
 			}

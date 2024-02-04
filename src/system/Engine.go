@@ -84,10 +84,10 @@ func NewEngine() (*Engine, error) {
 	}
 	tokenBucket := TokenBucket.NewTokenBucket(config.NumberOfTokens, int64(config.TokenResetInterval))
 
-	tree, _ := lsmtree.LoadLSMTreeFromFile(config.LSMTreeMaxDepth, config.LSMCompactionType, config.LSMFirstLevelSize, config.LSMGrowthFactor, config.IndexDegree, config.SummaryDegree, config.SSTableInSameFile, config.CompressionOn)
+	tree, _ := lsmtree.LoadLSMTreeFromFile(config.LSMTreeMaxDepth, config.LSMCompactionType, config.LSMFirstLevelSize, config.LSMGrowthFactor, config.IndexDegree, config.SummaryDegree, config.SSTableInSameFile, config.CompressionOn, dict)
 
 	if tree == nil {
-		tree, err = lsmtree.NewLSMTree(config.LSMTreeMaxDepth, config.LSMCompactionType, config.LSMFirstLevelSize, config.LSMGrowthFactor, config.IndexDegree, config.SummaryDegree, config.SSTableInSameFile, config.CompressionOn)
+		tree, err = lsmtree.NewLSMTree(config.LSMTreeMaxDepth, config.LSMCompactionType, config.LSMFirstLevelSize, config.LSMGrowthFactor, config.IndexDegree, config.SummaryDegree, config.SSTableInSameFile, config.CompressionOn, dict)
 		if err != nil {
 			return nil, err
 		}
@@ -148,16 +148,17 @@ func (engine *Engine) Delete(key string) error {
 func (engine *Engine) Commit(key string, value []byte, tombstone byte) error {
 	timestamp := uint64(time.Now().UnixNano())
 	r := model.NewRecordTimestamp(tombstone, key, value, timestamp)
-	err := engine.Wal.Append(r)
-	if err != nil {
-		return err
-	}
+
 	didSwap, didFlush, records := memtable.Put(key, value, timestamp, tombstone)
 	if didSwap {
-		err = engine.Wal.UpdateWatermark(didFlush)
+		err := engine.Wal.UpdateWatermark(didFlush)
 		if err != nil {
 			log.Fatal(err)
 		}
+	}
+	err := engine.Wal.Append(r)
+	if err != nil {
+		return err
 	}
 	if didFlush {
 		sstable, err := sstable.CreateSStable(records, engine.Config.SSTableInSameFile, engine.Config.CompressionOn, int(engine.Config.IndexDegree), int(engine.Config.SummaryDegree), engine.CompressionMap)

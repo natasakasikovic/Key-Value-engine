@@ -15,6 +15,7 @@ type SSTableIterator struct {
 	current_offset      int64
 	end_offset          int64
 	isSSTableCompressed bool
+	CompressionMap      map[string]uint64
 }
 
 func isSSTableInSingleFile(tableName string) (bool, error) {
@@ -96,12 +97,12 @@ func getDataOffsets(table *sstable.SSTable) (int64, int64, error) {
 // Returns a pointer to a new sstable iterator.
 // The iterator becomes unusable after any sstables get inserted into the LSM tree -
 // - due to the possibility of the data file being renamed.
-func NewSSTableIterator(table *sstable.SSTable, isCompressed bool) (*SSTableIterator, error) {
+func NewSSTableIterator(table *sstable.SSTable, isCompressed bool, compressionMap map[string]uint64) (*SSTableIterator, error) {
 	table.Data.Close()
 	table.Index.Close()
 	table.Summary.Close()
 
-	var iterator *SSTableIterator = &SSTableIterator{isSSTableCompressed: isCompressed}
+	var iterator *SSTableIterator = &SSTableIterator{isSSTableCompressed: isCompressed, CompressionMap: compressionMap}
 	var err error
 
 	iterator.current_offset, iterator.end_offset, err = getDataOffsets(table)
@@ -129,7 +130,7 @@ func NewSSTableIterator(table *sstable.SSTable, isCompressed bool) (*SSTableIter
 func (iter *SSTableIterator) Next() (*model.Record, error) {
 
 	for iter.current_offset < iter.end_offset {
-		record_p, _, err := model.Deserialize(iter.data, iter.isSSTableCompressed)
+		record_p, _, err := model.Deserialize(iter.data, iter.isSSTableCompressed, iter.CompressionMap)
 		if err != nil {
 			return nil, err
 		}

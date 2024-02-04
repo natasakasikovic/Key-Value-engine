@@ -22,6 +22,7 @@ type LSMTree struct {
 	sstableSummaryDegree uint32
 	sstableInSameFile    bool
 	sstableCompressionOn bool
+	compressionMap       map[string]uint64
 }
 
 func isSSTableInSingleFile(tableName string) (bool, error) {
@@ -85,7 +86,8 @@ func loadAllSStables() ([]*sstable.SSTable, error) {
 }
 
 func makeEmptyLSMTree(maxDepth uint32, compactionType string, firstLevelSize uint32, growthFactor uint32,
-	sstableIndexDegree uint32, sstableSummaryDegree uint32, sstableInSameFile bool, sstableCompressionOn bool) *LSMTree {
+	sstableIndexDegree uint32, sstableSummaryDegree uint32, sstableInSameFile bool, sstableCompressionOn bool,
+	compressionMap map[string]uint64) *LSMTree {
 	var tree *LSMTree = &LSMTree{
 		maxDepth:             maxDepth,
 		compactionType:       compactionType,
@@ -95,6 +97,7 @@ func makeEmptyLSMTree(maxDepth uint32, compactionType string, firstLevelSize uin
 		sstableSummaryDegree: sstableSummaryDegree,
 		sstableInSameFile:    sstableInSameFile,
 		sstableCompressionOn: sstableCompressionOn,
+		compressionMap:       compressionMap,
 	}
 
 	tree.sstableArrays = make([][]*sstable.SSTable, maxDepth)
@@ -107,7 +110,8 @@ func makeEmptyLSMTree(maxDepth uint32, compactionType string, firstLevelSize uin
 
 // Creates a new LSM Tree and loads existing sstables into it
 func NewLSMTree(maxDepth uint32, compactionType string, firstLevelSize uint32, growthFactor uint32,
-	sstableIndexDegree uint32, sstableSummaryDegree uint32, sstableInSameFile bool, sstableCompressionOn bool) (*LSMTree, error) {
+	sstableIndexDegree uint32, sstableSummaryDegree uint32, sstableInSameFile bool, sstableCompressionOn bool,
+	compressionMap map[string]uint64) (*LSMTree, error) {
 	var tree *LSMTree = makeEmptyLSMTree(
 		maxDepth,
 		compactionType,
@@ -116,7 +120,8 @@ func NewLSMTree(maxDepth uint32, compactionType string, firstLevelSize uint32, g
 		sstableIndexDegree,
 		sstableSummaryDegree,
 		sstableInSameFile,
-		sstableCompressionOn)
+		sstableCompressionOn,
+		compressionMap)
 
 	tables, err := loadAllSStables()
 	if err != nil {
@@ -134,7 +139,8 @@ const LSM_PATH string = "../data/LSMTree.json"
 // Returns a pointer to the lsm tree if loaded successfuly
 // Otherwise, returns nil
 func LoadLSMTreeFromFile(maxDepth uint32, compactionType string, firstLevelSize uint32, growthFactor uint32,
-	sstableIndexDegree uint32, sstableSummaryDegree uint32, sstableInSameFile bool, sstableCompressionOn bool) (*LSMTree, error) {
+	sstableIndexDegree uint32, sstableSummaryDegree uint32, sstableInSameFile bool, sstableCompressionOn bool,
+	compressionMap map[string]uint64) (*LSMTree, error) {
 	lsm := makeEmptyLSMTree(maxDepth,
 		compactionType,
 		firstLevelSize,
@@ -142,7 +148,8 @@ func LoadLSMTreeFromFile(maxDepth uint32, compactionType string, firstLevelSize 
 		sstableIndexDegree,
 		sstableSummaryDegree,
 		sstableInSameFile,
-		sstableCompressionOn)
+		sstableCompressionOn,
+		compressionMap)
 
 	jsonData, err := os.ReadFile(LSM_PATH)
 
@@ -284,14 +291,14 @@ func (tree *LSMTree) reopenSSTables() error {
 
 // Merges the passed sstables into a new sstable
 func mergeSSTables(sstableArray []*sstable.SSTable, sstableIndexDegree uint32, sstableSummaryDegree uint32,
-	sstableInSameFile bool, sstableCompressionOn bool) (*sstable.SSTable, error) {
+	sstableInSameFile bool, sstableCompressionOn bool, compressionMap map[string]uint64) (*sstable.SSTable, error) {
 	var sstableCount int = len(sstableArray)
 	var fileIterators []iterators.Iterator = make([]iterators.Iterator, sstableCount)
 
 	//Initialize file iterators
 	for i := 0; i < sstableCount; i++ {
 		var err error
-		fileIterators[i], err = iterators.NewSSTableIterator(sstableArray[i], sstableCompressionOn)
+		fileIterators[i], err = iterators.NewSSTableIterator(sstableArray[i], sstableCompressionOn, compressionMap)
 		if err != nil {
 			return nil, err
 		}
@@ -322,7 +329,7 @@ func mergeSSTables(sstableArray []*sstable.SSTable, sstableIndexDegree uint32, s
 	}
 
 	//The new sstable
-	newSSTable, err := sstable.CreateSStable(newRecords, sstableInSameFile, sstableCompressionOn, int(sstableIndexDegree), int(sstableSummaryDegree))
+	newSSTable, err := sstable.CreateSStable(newRecords, sstableInSameFile, sstableCompressionOn, int(sstableIndexDegree), int(sstableSummaryDegree), compressionMap)
 
 	if err != nil {
 		return nil, err
@@ -448,7 +455,7 @@ func (tree *LSMTree) leveledCompaction(levelIndex uint32) error {
 		}
 
 		merged, err := mergeSSTables(toMerge, tree.sstableIndexDegree, tree.sstableSummaryDegree,
-			tree.sstableInSameFile, tree.sstableCompressionOn)
+			tree.sstableInSameFile, tree.sstableCompressionOn, tree.compressionMap)
 
 		//Insert the merged sstable into the level
 		tree.closeAllTables()
@@ -508,7 +515,7 @@ func (tree *LSMTree) sizeTieredCompaction(levelIndex uint32) error {
 
 	//Merge all sstables into a single new sstable
 	merged, err := mergeSSTables(toMerge, tree.sstableIndexDegree, tree.sstableSummaryDegree,
-		tree.sstableInSameFile, tree.sstableCompressionOn)
+		tree.sstableInSameFile, tree.sstableCompressionOn, tree.compressionMap)
 
 	if err != nil {
 		return err

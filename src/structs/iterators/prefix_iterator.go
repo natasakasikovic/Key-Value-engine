@@ -13,7 +13,7 @@ type PrefixIterator struct {
 	prefix    string
 }
 
-func NewPrefixIterator(prefix string, isSStableCompressed bool) (*PrefixIterator, error) {
+func NewPrefixIterator(prefix string, isSStableCompressed bool, compressionMap map[string]uint64) (*PrefixIterator, error) {
 	var prefixIter *PrefixIterator = &PrefixIterator{prefix: prefix}
 	var iterators []Iterator
 
@@ -33,7 +33,7 @@ func NewPrefixIterator(prefix string, isSStableCompressed bool) (*PrefixIterator
 			allSStables[i] = nil
 		} else {
 			//Otherwise, create an iterator for the sstable
-			sstableIter, err := NewSSTableIterator(allSStables[i], isSStableCompressed)
+			sstableIter, err := NewSSTableIterator(allSStables[i], isSStableCompressed, compressionMap)
 			if err != nil {
 				return nil, err
 			}
