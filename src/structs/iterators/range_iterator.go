@@ -12,6 +12,10 @@ type RangeIterator struct {
 	rangeMax  string
 }
 
+// Return a pointer to a new range iterator
+// The range iterator allows iteration over records whose key fall into the given range
+// The method RangeIterator.Stop() MUST be called after creating a new iterator in order to free it's resources
+// An error is returned if it occurs during the creation of the iterator
 func NewRangeIterator(minKey string, maxKey string, isSStableCompressed bool, compressionMap map[string]uint64) (*RangeIterator, error) {
 	var rangeIter *RangeIterator = &RangeIterator{rangeMin: minKey, rangeMax: maxKey}
 	var iterators []Iterator
@@ -43,6 +47,7 @@ func NewRangeIterator(minKey string, maxKey string, isSStableCompressed bool, co
 		iterators = append(iterators, memtableIter)
 	}
 
+	//Group up all the sstable and memtable iterators
 	iterGroup, err := NewIteratorGroup(iterators)
 	if err != nil {
 		return nil, err
@@ -65,6 +70,10 @@ func NewRangeIterator(minKey string, maxKey string, isSStableCompressed bool, co
 	return rangeIter, nil
 }
 
+// Returns a pointer to the next non-deleted record within the given range, also returns an error
+// Will NEVER return a deleted record
+// If all non-deleted records within the given range have been iterated over, returns nil as the record pointer
+// If any errors occur, the returned record is nil and the error is returned
 func (rangeIter *RangeIterator) Next() (*model.Record, error) {
 	//If all the records in the range have been read
 	if rangeIter.record == nil {
@@ -89,6 +98,7 @@ func (rangeIter *RangeIterator) Next() (*model.Record, error) {
 	return retRecord, nil
 }
 
+// Frees the memory and closes the files used by the range iterator
 func (rangeIter *RangeIterator) Stop() {
 	rangeIter.iterGroup.Stop()
 	rangeIter.record = nil

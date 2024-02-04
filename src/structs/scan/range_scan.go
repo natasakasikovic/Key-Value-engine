@@ -11,24 +11,29 @@ import (
 func RangeScan(minKey string, maxKey string, pageNumber int, pageSize int, SSTableCompressionOn bool, compressionMap map[string]uint64) ([]*model.Record, error) {
 	var records []*model.Record = make([]*model.Record, 0)
 
+	//If the page number is invalid, return an empty array
 	if pageNumber < 1 {
 		return records, nil
 	}
 
+	//If the page size is invalid, return an empty array
 	if pageSize < 1 {
 		return records, nil
 	}
 
+	//Create a new range iterator
 	rangeIter, err := iterators.NewRangeIterator(minKey, maxKey, SSTableCompressionOn, compressionMap)
-	defer rangeIter.Stop()
-
+	//Stop the iterator once we are finished
 	if err != nil {
 		return records, err
 	}
+	//Close the iterator once we finish
+	defer rangeIter.Stop()
 
 	//The number of records we need to skip before we get to the right page
 	var recordsToSkip int = (pageNumber - 1) * pageSize
 
+	//Iterating over the skipped records
 	for i := 0; i < recordsToSkip; i++ {
 		record, err := rangeIter.Next()
 		if err != nil {
@@ -48,6 +53,7 @@ func RangeScan(minKey string, maxKey string, pageNumber int, pageSize int, SSTab
 			return records, err
 		}
 
+		//If there are no records left, return the non-full array
 		if record == nil {
 			break
 		}

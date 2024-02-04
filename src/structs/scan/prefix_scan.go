@@ -11,23 +11,28 @@ import (
 func PrefixScan(prefix string, pageNumber int, pageSize int, SSTableCompressionOn bool, compressionMap map[string]uint64) ([]*model.Record, error) {
 	var records []*model.Record = make([]*model.Record, 0)
 
+	//If the page number is invalid, return an empty array
 	if pageNumber < 1 {
 		return records, nil
 	}
 
+	//If the page size is invalid, return an empty array
 	if pageSize < 1 {
 		return records, nil
 	}
 
+	//Create a new prefix iterator
 	prefixIter, err := iterators.NewPrefixIterator(prefix, SSTableCompressionOn, compressionMap)
-	defer prefixIter.Stop()
 	if err != nil {
 		return records, err
 	}
+	//Stop the iterator once we are finished
+	defer prefixIter.Stop()
 
 	//The number of records we need to skip before we get to the right page
 	var recordsToSkip int = (pageNumber - 1) * pageSize
 
+	//Iterating through the records we need to skip
 	for i := 0; i < recordsToSkip; i++ {
 		record, err := prefixIter.Next()
 		if err != nil {
@@ -47,6 +52,7 @@ func PrefixScan(prefix string, pageNumber int, pageSize int, SSTableCompressionO
 			return records, err
 		}
 
+		//If there are no more records left, return the non-full array
 		if record == nil {
 			break
 		}

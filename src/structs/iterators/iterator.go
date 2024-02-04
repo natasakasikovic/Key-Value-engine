@@ -99,7 +99,7 @@ func (iterGroup *IteratorGroup) Next() (*model.Record, error) {
 
 	var err error
 	for {
-		//Find the smallest key
+		//Find the smallest key of the records in the current iteration
 		var minKey string = getMinKey()
 		if minKey == EMPTY_KEY {
 			return nil, nil

@@ -13,6 +13,10 @@ type PrefixIterator struct {
 	prefix    string
 }
 
+// Return a pointer to a new prefix iterator
+// The prefix iterator allows iteration over records whose keys begin with the passed prefix
+// The method PrefixIterator.Stop() MUST be called after creating a new iterator in order to free it's resources
+// An error is returned if it occurs during the creation of the iterator
 func NewPrefixIterator(prefix string, isSStableCompressed bool, compressionMap map[string]uint64) (*PrefixIterator, error) {
 	var prefixIter *PrefixIterator = &PrefixIterator{prefix: prefix}
 	var iterators []Iterator
@@ -51,6 +55,7 @@ func NewPrefixIterator(prefix string, isSStableCompressed bool, compressionMap m
 		iterators = append(iterators, memtableIter)
 	}
 
+	//Group up all the sstable and memtable iterators
 	iterGroup, err := NewIteratorGroup(iterators)
 	if err != nil {
 		return nil, err
@@ -73,6 +78,10 @@ func NewPrefixIterator(prefix string, isSStableCompressed bool, compressionMap m
 	return prefixIter, nil
 }
 
+// Returns a pointer to the next non-deleted record with the given prefix, also returns an error
+// Will NEVER return a deleted record
+// If all non-deleted records with the given prefix have been iterated over, returns nil as the record pointer
+// If any errors occur, the returned record is nil and the error is returned
 func (prefixIter *PrefixIterator) Next() (*model.Record, error) {
 	//If all the records in the range have been read
 	if prefixIter.record == nil {
@@ -97,6 +106,7 @@ func (prefixIter *PrefixIterator) Next() (*model.Record, error) {
 	return retRecord, nil
 }
 
+// Frees the memory and closes the files used by the prefix iterator
 func (prefixIter *PrefixIterator) Stop() {
 	prefixIter.iterGroup.Stop()
 	prefixIter.record = nil
