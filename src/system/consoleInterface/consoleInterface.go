@@ -4,12 +4,13 @@ import (
 	"bufio"
 	"encoding/binary"
 	"fmt"
-	"github.com/natasakasikovic/Key-Value-engine/src/structs/sstable"
-	"github.com/natasakasikovic/Key-Value-engine/src/utils"
 	"log"
 	"os"
 	"strconv"
 	"strings"
+
+	"github.com/natasakasikovic/Key-Value-engine/src/structs/sstable"
+	"github.com/natasakasikovic/Key-Value-engine/src/utils"
 
 	"github.com/natasakasikovic/Key-Value-engine/src/model"
 	countMinSketch "github.com/natasakasikovic/Key-Value-engine/src/structs/CountMinSketch"
@@ -792,36 +793,52 @@ func useSimHash(engine *engine.Engine) {
 	}
 }
 func useMerkle(engine *engine.Engine) {
+	var err error
 	fmt.Println("Please enter path of sstable:")
 	scanner := bufio.NewScanner(os.Stdin)
 	scanner.Scan()
 	path := scanner.Text()
-	sstablePath := fmt.Sprintf("data/sstable/%s", path)
-	fmt.Println(sstablePath)
-	content, _ := utils.GetDirContent(sstablePath)
+	sstablePath := fmt.Sprintf("../data/sstable/%s", path)
+	content, err := utils.GetDirContent(sstablePath)
+	if err != nil {
+		fmt.Println("Wrong path, please enter again.")
+		return
+	}
 	var sstableLoaded *sstable.SSTable
-	var err error
+
 	if len(content) == 1 {
-		sstableLoaded, err = sstable.LoadSStableSingle(path)
+		sstableLoaded, err = sstable.LoadSStableSingle(sstablePath)
 		if err != nil {
 			log.Fatal(err)
 		}
 	} else {
-		sstableLoaded, err = sstable.LoadSSTableSeparate(path)
+		sstableLoaded, err = sstable.LoadSSTableSeparate(sstablePath)
 		if err != nil {
 			log.Fatal(err)
 		}
 	}
-	sstableLoaded.LoadMerkle(len(content) == 1, sstablePath)
+	sstableLoaded.LoadMerkle(len(content) != 1, sstablePath)
 
 	// load data
 	offset1 := sstableLoaded.DataOffset
-	offset2 := sstableLoaded.IndexOffset
+	var offset2 int64
+	if len(content) == 1 {
+		offset2 = sstableLoaded.IndexOffset
+	} else {
+		offset2, err = utils.GetFileLength(sstableLoaded.Data)
+		if err != nil {
+			fmt.Println("Error while getting file length.")
+		}
+	}
 
 	var records []*model.Record
-
+	sstableLoaded.Data.Seek(offset1, 0)
 	for offset1 < offset2 {
-		record, bytesRead, _ := model.Deserialize(sstableLoaded.Data, engine.Config.CompressionOn, engine.CompressionMap)
+		record, bytesRead, err := model.Deserialize(sstableLoaded.Data, engine.Config.CompressionOn, engine.CompressionMap)
+		if err != nil {
+			fmt.Println("Error while deserializing record.", err)
+			return
+		}
 		records = append(records, record)
 		offset1 += int64(bytesRead)
 	}
@@ -833,7 +850,13 @@ func useMerkle(engine *engine.Engine) {
 	}
 
 	response, _ := sstableLoaded.Merkle.VerifyTree(bytesToCheck)
-	fmt.Println(response)
+
+	fmt.Println("Changes are on these records: ")
+
+	for _, change := range response {
+		fmt.Println(change)
+	}
+
 }
 func probStructs(engine *engine.Engine) {
 	scanner := bufio.NewScanner(os.Stdin)

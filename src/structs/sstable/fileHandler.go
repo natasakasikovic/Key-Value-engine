@@ -350,7 +350,7 @@ func (sstable *SSTable) LoadMerkle(separateFile bool, path string) error {
 	var toRead []byte
 
 	if separateFile {
-		path = fmt.Sprintf("%s/%s/%s%s", PATH, path, FILE_NAME, "Metadata.db")
+		path = fmt.Sprintf("%s/usertable-data-Metadata.db", path)
 		file, err = os.Open(path)
 		if err != nil {
 			return err
